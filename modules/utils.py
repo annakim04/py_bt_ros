@@ -74,6 +74,22 @@ def merge_dicts(dict1, dict2):
             
     return merged_dict    
 
+class ObjectToRender:
+    def __init__(self, position, image_path, scale_by = None, width = None, height = None, rotation=0):
+        image_temp = pygame.image.load(image_path)        
+        if scale_by is not None:
+            image_temp = pygame.transform.scale_by(image_temp, scale_by)
+        if width is not None and height is not None:
+            image_temp = pygame.transform.scale(image_temp, (width, height))
+
+        self.image = image_temp
+        self.position = pygame.math.Vector2(position)  
+        self.rotation = rotation
+
+    def draw(self, screen):        
+        image_current = pygame.transform.rotate(self.image, self.rotation)          
+        screen.blit(image_current, (self.position.x, self.position.y))    
+
 
 # Results saving
 class ResultSaver:
