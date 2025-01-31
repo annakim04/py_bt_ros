@@ -33,14 +33,21 @@ class Sequence(Node):
     def __init__(self, name, children):
         super().__init__(name)
         self.children = children
+        self.current_child_index = 0  
 
     async def run(self, agent, blackboard):
-        for child in self.children:
-            status = await child.run(agent, blackboard)
+        while self.current_child_index < len(self.children):
+            status = await self.children[self.current_child_index].run(agent, blackboard)
+
             if status == Status.RUNNING:
-                continue
-            if status != Status.SUCCESS:
-                return status
+                return Status.RUNNING  
+            elif status == Status.FAILURE:
+                self.current_child_index = 0  
+                return Status.FAILURE
+            elif status == Status.SUCCESS:
+                self.current_child_index += 1  
+
+        self.current_child_index = 0  
         return Status.SUCCESS
 
 # Fallback node: Runs child nodes in sequence until one succeeds
@@ -48,14 +55,21 @@ class Fallback(Node):
     def __init__(self, name, children):
         super().__init__(name)
         self.children = children
+        self.current_child_index = 0  
 
     async def run(self, agent, blackboard):
-        for child in self.children:
-            status = await child.run(agent, blackboard)
+        while self.current_child_index < len(self.children):
+            status = await self.children[self.current_child_index].run(agent, blackboard)
+
             if status == Status.RUNNING:
-                continue
-            if status != Status.FAILURE:
-                return status
+                return Status.RUNNING  
+            elif status == Status.SUCCESS:
+                self.current_child_index = 0  
+                return Status.SUCCESS
+            elif status == Status.FAILURE:
+                self.current_child_index += 1  
+
+        self.current_child_index = 0  
         return Status.FAILURE
 
 # Synchronous action node
