@@ -20,7 +20,7 @@ BTNodeList.CONDITION_NODES.extend(CUSTOM_CONDITION_NODES)
 
 from turtlesim.msg import Pose as TPose
 from std_srvs.srv import SetBool
-from scenarios.features.ros.base_bt_nodes_ros import ConditionWithROSTopics, ActionWithROSAction, ActionWithROSService
+from modules.base_bt_nodes_ros import ConditionWithROSTopics, ActionWithROSAction, ActionWithROSService
 
 
 class IsNearbyTarget(ConditionWithROSTopics):

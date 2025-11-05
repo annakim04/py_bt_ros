@@ -1,15 +1,13 @@
-scenario: 
-  environment: scenarios.features.ros
+scenario: scenarios.example_turtlesim
 
 agent:
   namespaces: "/turtle1"
   behavior_tree_xml: "default_bt.xml"
 
-simulation:
+bt_runner:
   bt_tick_rate: 10.0 
-  screen_width: 1400 
-  screen_height: 1000 
-  profiling_mode: False
   bt_visualiser:
     enabled: True       # Set to True to enable BT visualisation, False to disable
-    agent_id: 0         # ID of the agent whose behaviour tree will be visualised
+    screen_width: 1400 
+    screen_height: 1000 
+  profiling_mode: False
