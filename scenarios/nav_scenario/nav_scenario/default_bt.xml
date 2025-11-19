@@ -1,0 +1,13 @@
+
+<root main_tree_to_execute="MainTree">
+    <BehaviorTree ID="MainTree">
+
+        <Sequence>
+            <WaitForGoal goal_topic="/bt/goal_pose"/>
+            <MoveToGoal/>
+            <CaptureImage/>
+            <ReturnToStart/>
+        </Sequence>
+
+    </BehaviorTree>
+</root>
