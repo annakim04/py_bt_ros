@@ -1,3 +1,4 @@
+
 scenario: scenarios.nav_scenario
 
 agent:
@@ -12,4 +13,5 @@ bt_runner:
     screen_width: 850
     screen_height: 850
 
+  profiling_mode: False
   profiling_mode: False

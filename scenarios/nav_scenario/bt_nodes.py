@@ -73,6 +73,18 @@ class WaitForGoal(Node):
 
 # MoveToGoal : Nav2 Action 요청
 class MoveToGoal(ActionWithROSAction):
+
+
+from geometry_msgs.msg import PoseStamped, Pose, PoseWithCovarianceStamped
+
+
+
+
+
+# ============================================
+# 4) ReturnToStart : Nav2 Action 복귀
+# ============================================
+class ReturnToStart(ActionWithROSAction):
     def __init__(self, name, agent, action_name="/navigate_to_pose"):
         super().__init__(name, agent, (NavigateToPose, action_name))
 
@@ -82,6 +94,10 @@ class MoveToGoal(ActionWithROSAction):
             return None
 
         # Nav2가 원하는 Goal 구조
+        pose: PoseStamped = blackboard.get("initial_pose")
+        if pose is None:
+            return None
+
         goal = NavigateToPose.Goal()
         goal.pose = pose
         return goal
@@ -90,3 +106,15 @@ class MoveToGoal(ActionWithROSAction):
         return Status.SUCCESS
 
 
+# ============================================
+# BT Node Registration (중요)
+# ============================================
+class BTNodeList:
+    CONTROL_NODES = BaseBTNodeList.CONTROL_NODES    # Sequence 포함
+    ACTION_NODES = [
+        "WaitForGoal",
+        "MoveToGoal",
+        "ReturnToStart",
+    ]
+    CONDITION_NODES = []
+    DECORATOR_NODES = []
