@@ -89,15 +89,4 @@ class MoveToGoal(ActionWithROSAction):
     def _interpret_result(self, result, agent, blackboard, status_code=None):
         return Status.SUCCESS
 
-# CaptureImage : Trigger 서비스 호출
-class CaptureImage(ActionWithROSService):
-    def __init__(self, name, agent, service_name="/capture_image"):
-        super().__init__(name, agent, (Trigger, service_name))
-
-    def _build_request(self, agent, blackboard):
-        return Trigger.Request()
-
-    def _interpret_response(self, response, agent, blackboard):
-        return Status.SUCCESS
-
 
