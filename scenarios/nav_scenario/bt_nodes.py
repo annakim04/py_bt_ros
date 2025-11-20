@@ -17,10 +17,10 @@ from geometry_msgs.msg import PoseStamped
 from nav2_msgs.action import NavigateToPose
 from std_srvs.srv import Trigger
 
-# WaitForGoal : /bt/goal_pose 받으면 SUCCESS
+# 1) WaitForGoal : /bt/goal_pose 받으면 SUCCESS
 from geometry_msgs.msg import PoseStamped, Pose, PoseWithCovarianceStamped
 
-# WaitForGoal 
+# 1) WaitForGoal : /bt/goal_pose 받고, /amcl_pose 저장
 class WaitForGoal(Node):
     def __init__(self, name, agent, 
                  goal_topic="/bt/goal_pose", 
@@ -30,13 +30,15 @@ class WaitForGoal(Node):
         self.goal_msg = None
         self.current_pose_msg = None # 현재 위치 저장용 변수
 
+        # Goal Pose 구독
         self.ros.node.create_subscription(
             PoseStamped,
             goal_topic,
             self._goal_cb,
             10
         )
-
+        
+        # AMCL Pose (현재 위치) 구독
         self.ros.node.create_subscription(
             PoseWithCovarianceStamped,
             pose_topic,
@@ -58,14 +60,15 @@ class WaitForGoal(Node):
         # Blackboard에 목표 저장
         blackboard["goal_pose"] = self.goal_msg
 
-        # Blackboard에 현재 위치를 'initial_pose'로 저장
+        # Blackboard에 *실제* 현재 위치를 'initial_pose'로 저장
         if "initial_pose" not in blackboard:
             init = PoseStamped()
             init.header.frame_id = "map"
             init.header.stamp = self.ros.node.get_clock().now().to_msg()
+            # (0,0 하드코딩 대신, /amcl_pose에서 받은 실제 Pose를 사용)
             init.pose = self.current_pose_msg.pose.pose 
             blackboard["initial_pose"] = init
-
+        
         self.goal_msg = None
 
         self.status = Status.SUCCESS
