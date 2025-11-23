@@ -1,13 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root BTCPP_format="4">
+  <BehaviorTree ID="nav_photo_return">
+    <Sequence name="RootSequence">
+      <!-- 시작 위치 / 초기 goal 세팅 -->
+      <InitNavGoal/>
 
-<root main_tree_to_execute="MainTree">
-    <BehaviorTree ID="MainTree">
+      <!-- 집하 장소로 이동 -->
+      <SetPickupGoal/>
+      <MoveToGoal/>
 
-        <Sequence>
-            <WaitForGoal goal_topic="/bt/goal_pose"/>
-            <MoveToGoal/>
-            <CaptureImage/>
-            <ReturnToStart/>
+      <!-- (선택) 도착 후 사진 한 장 찍기 -->
+      <CaptureImage/>
+
+      <!-- 색 정보가 나올 때까지 대기 (/parcel_color) -->
+      <WaitForParcelColor/>
+
+      <!-- 색에 따라 서로 다른 드랍존으로 이동 -->
+      <ReactiveFallback name="DeliverByColor">
+        <Sequence name="DeliverRed">
+          <IsParcelRed/>
+          <SetRedDropGoal/>
+          <MoveToGoal/>
         </Sequence>
 
-    </BehaviorTree>
+        <Sequence name="DeliverGreen">
+          <IsParcelGreen/>
+          <SetGreenDropGoal/>
+          <MoveToGoal/>
+        </Sequence>
+
+        <Sequence name="DeliverBlue">
+          <IsParcelBlue/>
+          <SetBlueDropGoal/>
+          <MoveToGoal/>
+        </Sequence>
+      </ReactiveFallback>
+
+      <!-- 다시 시작 위치로 복귀 -->
+      <ReturnHome/>
+    </Sequence>
+  </BehaviorTree>
+
+  <TreeNodesModel>
+    <!-- Conditions -->
+    <Condition ID="InitNavGoal" editable="true"/>
+    <Condition ID="WaitForParcelColor" editable="true"/>
+    <Condition ID="IsParcelRed" editable="true"/>
+    <Condition ID="IsParcelGreen" editable="true"/>
+    <Condition ID="IsParcelBlue" editable="true"/>
+
+    <!-- Actions -->
+    <Action ID="MoveToGoal" editable="true"/>
+    <Action ID="CaptureImage" editable="true"/>
+    <Action ID="ReturnHome" editable="true"/>
+    <Action ID="SetPickupGoal" editable="true"/>
+    <Action ID="SetRedDropGoal" editable="true"/>
+    <Action ID="SetGreenDropGoal" editable="true"/>
+    <Action ID="SetBlueDropGoal" editable="true"/>
+  </TreeNodesModel>
 </root>
