@@ -18,7 +18,7 @@ class CaptureImageServer(Node):
         self.bridge = CvBridge()
         self.last_image = None
 
-        camera_topic = '/TurtleBot3Burger/front_camera/image_color'
+        camera_topic = '/camera/color/image_raw'
         self.image_sub = self.create_subscription(
             Image,
             camera_topic,
