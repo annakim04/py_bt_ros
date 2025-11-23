@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <root BTCPP_format="4">
   <BehaviorTree ID="nav_photo_return">
-    <Sequence name="RootSequence">
+    <Sequence>
       <!-- 시작 위치 / 초기 goal 세팅 -->
       <InitNavGoal/>
 
@@ -16,20 +16,20 @@
       <WaitForParcelColor/>
 
       <!-- 색에 따라 서로 다른 드랍존으로 이동 -->
-      <ReactiveFallback name="DeliverByColor">
-        <Sequence name="DeliverRed">
+      <ReactiveFallback>
+        <Sequence>
           <IsParcelRed/>
           <SetRedDropGoal/>
           <MoveToGoal/>
         </Sequence>
 
-        <Sequence name="DeliverGreen">
+        <Sequence>
           <IsParcelGreen/>
           <SetGreenDropGoal/>
           <MoveToGoal/>
         </Sequence>
 
-        <Sequence name="DeliverBlue">
+        <Sequence>
           <IsParcelBlue/>
           <SetBlueDropGoal/>
           <MoveToGoal/>
