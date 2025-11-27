@@ -7,7 +7,23 @@ from rclpy.action import (
     CancelResponse,
 )
 from nav2_msgs.action import NavigateToPose
-from std_msgs.msg import Empty
+from action_msgs.msg import GoalStatus
+
+result = NavigateToPose.Result()
+
+if status == GoalStatus.STATUS_SUCCEEDED:
+    self.get_logger().info("Nav2 navigation succeeded.")
+    result.error_code = 0        # NONE = 0
+    result.error_msg = ""
+    goal_handle.succeed()
+else:
+    self.get_logger().warn(f"Nav2 navigation failed. status={status}")
+    result.error_code = status   # 대충 상태 코드 넣거나, 너가 원하는 값
+    result.error_msg = "Nav2 failed"
+    goal_handle.abort()
+
+return result
+
 
 
 class LimoNavigateServer(Node):
