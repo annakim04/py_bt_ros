@@ -4,8 +4,7 @@
   <BehaviorTree ID="MainTree">
 
     <Sequence>
-      <!-- 시작 위치는 이미 충전 장소라고 가정하면 이 노드는 빼도 됨 -->
-      <!-- <MoveToCharge/> -->
+      <MoveToCharge/>
 
       <!-- 1) 충전 장소 -> 택배 수령 장소 -->
       <MoveToPickup/>
