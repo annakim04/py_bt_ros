@@ -9,22 +9,6 @@ from rclpy.action import (
 from nav2_msgs.action import NavigateToPose
 from action_msgs.msg import GoalStatus
 
-result = NavigateToPose.Result()
-
-if status == GoalStatus.STATUS_SUCCEEDED:
-    self.get_logger().info("Nav2 navigation succeeded.")
-    result.error_code = 0        # NONE = 0
-    result.error_msg = ""
-    goal_handle.succeed()
-else:
-    self.get_logger().warn(f"Nav2 navigation failed. status={status}")
-    result.error_code = status   # 대충 상태 코드 넣거나, 너가 원하는 값
-    result.error_msg = "Nav2 failed"
-    goal_handle.abort()
-
-return result
-
-
 
 class LimoNavigateServer(Node):
     """
@@ -93,7 +77,8 @@ class LimoNavigateServer(Node):
             self.get_logger().error("Nav2 NavigateToPose server not available!")
             goal_handle.abort()
             result = NavigateToPose.Result()
-            result.result = Empty()
+            result.error_code = GoalStatus.STATUS_ABORTED
+            result.error_msg = "Nav2 NavigateToPose server not available"
             return result
 
         self.get_logger().info(
@@ -114,7 +99,8 @@ class LimoNavigateServer(Node):
             self.get_logger().warn("Nav2 rejected the goal.")
             goal_handle.abort()
             result = NavigateToPose.Result()
-            result.result = Empty()
+            result.error_code = GoalStatus.STATUS_ABORTED
+            result.error_msg = "Nav2 rejected the goal"
             return result
 
         self.get_logger().info("Nav2 goal accepted. Waiting for result...")
@@ -126,7 +112,8 @@ class LimoNavigateServer(Node):
             await cancel_future
             goal_handle.canceled()
             result = NavigateToPose.Result()
-            result.result = Empty()
+            result.error_code = GoalStatus.STATUS_CANCELED
+            result.error_msg = "Canceled by BT"
             return result
 
         # Nav2 결과 기다리기
@@ -135,18 +122,17 @@ class LimoNavigateServer(Node):
 
         # Nav2 결과 상태에 따라 BT goal 상태 설정
         status = nav2_result.status
-        # status 값은 rclpy.action.GoalStatus.STATUS_SUCCEEDED 등 사용 가능
-        # 여기서는 단순히 SUCCEEDED만 성공 처리
-        from action_msgs.msg import GoalStatus
-
         result = NavigateToPose.Result()
-        result.result = Empty()
 
         if status == GoalStatus.STATUS_SUCCEEDED:
             self.get_logger().info("Nav2 navigation succeeded.")
+            result.error_code = GoalStatus.STATUS_SUCCEEDED
+            result.error_msg = ""
             goal_handle.succeed()
         else:
             self.get_logger().warn(f"Nav2 navigation failed. status={status}")
+            result.error_code = status
+            result.error_msg = f"Nav2 navigation failed. status={status}"
             goal_handle.abort()
 
         return result
