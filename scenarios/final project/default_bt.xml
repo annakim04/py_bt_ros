@@ -1,61 +1,32 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <root BTCPP_format="4">
-  <BehaviorTree ID="nav_photo_return">
+  <BehaviorTree ID="limo_waypoint_test">
     <Sequence>
-      <!-- 시작 위치 / 초기 goal 세팅 -->
-      <InitNavGoal/>
 
-      <!-- 집하 장소로 이동 -->
-      <SetPickupGoal/>
+      <!-- 첫 번째 좌표로 이동 -->
+      <SetWp1Goal/>
       <MoveToGoal/>
 
-      <!-- (선택) 도착 후 사진 한 장 찍기 -->
-      <CaptureImage/>
+      <!-- 두 번째 좌표로 이동 -->
+      <SetWp2Goal/>
+      <MoveToGoal/>
 
-      <!-- 색 정보가 나올 때까지 대기 (/parcel_color) -->
-      <WaitForParcelColor/>
+      <!-- 세 번째 좌표로 이동 -->
+      <SetWp3Goal/>
+      <MoveToGoal/>
 
-      <!-- 색에 따라 서로 다른 드랍존으로 이동 -->
-      <ReactiveFallback>
-        <Sequence>
-          <IsParcelRed/>
-          <SetRedDropGoal/>
-          <MoveToGoal/>
-        </Sequence>
+      <!-- 네 번째 좌표로 이동 -->
+      <SetWp4Goal/>
+      <MoveToGoal/>
 
-        <Sequence>
-          <IsParcelGreen/>
-          <SetGreenDropGoal/>
-          <MoveToGoal/>
-        </Sequence>
-
-        <Sequence>
-          <IsParcelBlue/>
-          <SetBlueDropGoal/>
-          <MoveToGoal/>
-        </Sequence>
-      </ReactiveFallback>
-
-      <!-- 다시 시작 위치로 복귀 -->
-      <ReturnHome/>
     </Sequence>
   </BehaviorTree>
 
   <TreeNodesModel>
-    <!-- Conditions -->
-    <Condition ID="InitNavGoal" editable="true"/>
-    <Condition ID="WaitForParcelColor" editable="true"/>
-    <Condition ID="IsParcelRed" editable="true"/>
-    <Condition ID="IsParcelGreen" editable="true"/>
-    <Condition ID="IsParcelBlue" editable="true"/>
-
-    <!-- Actions -->
     <Action ID="MoveToGoal" editable="true"/>
-    <Action ID="CaptureImage" editable="true"/>
-    <Action ID="ReturnHome" editable="true"/>
-    <Action ID="SetPickupGoal" editable="true"/>
-    <Action ID="SetRedDropGoal" editable="true"/>
-    <Action ID="SetGreenDropGoal" editable="true"/>
-    <Action ID="SetBlueDropGoal" editable="true"/>
+    <Action ID="SetWp1Goal" editable="true"/>
+    <Action ID="SetWp2Goal" editable="true"/>
+    <Action ID="SetWp3Goal" editable="true"/>
+    <Action ID="SetWp4Goal" editable="true"/>
   </TreeNodesModel>
 </root>
