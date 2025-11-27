@@ -1,32 +1,31 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<root BTCPP_format="4">
-  <BehaviorTree ID="limo_waypoint_test">
+<root main_tree_to_execute="MainTree">
+
+  <BehaviorTree ID="MainTree">
+
     <Sequence>
+      <!-- 시작 위치는 이미 충전 장소라고 가정하면 이 노드는 빼도 됨 -->
+      <!-- <MoveToCharge/> -->
 
-      <!-- 첫 번째 좌표로 이동 -->
-      <SetWp1Goal/>
-      <MoveToGoal/>
+      <!-- 1) 충전 장소 -> 택배 수령 장소 -->
+      <MoveToPickup/>
 
-      <!-- 두 번째 좌표로 이동 -->
-      <SetWp2Goal/>
-      <MoveToGoal/>
+      <!-- 2) 택배 수령 (항상 성공, 더미) -->
+      <ReceiveParcel/>
 
-      <!-- 세 번째 좌표로 이동 -->
-      <SetWp3Goal/>
-      <MoveToGoal/>
+      <!-- 3) 수령 장소 -> 배달 장소 -->
+      <MoveToDelivery/>
 
-      <!-- 네 번째 좌표로 이동 -->
-      <SetWp4Goal/>
-      <MoveToGoal/>
+      <!-- 4) 택배 배달 (항상 성공, 더미) -->
+      <DropoffParcel/>
 
+      <!-- 5) 배달 장소 -> 다시 수령 장소 -->
+      <MoveToPickup/>
+
+      <!-- 6) 수령 장소 -> 충전 장소 복귀 -->
+      <MoveToCharge/>
     </Sequence>
+
   </BehaviorTree>
 
-  <TreeNodesModel>
-    <Action ID="MoveToGoal" editable="true"/>
-    <Action ID="SetWp1Goal" editable="true"/>
-    <Action ID="SetWp2Goal" editable="true"/>
-    <Action ID="SetWp3Goal" editable="true"/>
-    <Action ID="SetWp4Goal" editable="true"/>
-  </TreeNodesModel>
 </root>
