@@ -20,9 +20,9 @@ from nav2_msgs.action import NavigateToPose
 # 좌표 정의 (네 맵에 맞게 수정 필요!)
 # ================================
 # 예시 값이니까, 실제 map 좌표로 꼭 바꿔줘!
-CHARGE_X,  CHARGE_Y,  CHARGE_YAW  = 0.0, 0.0, 0.0   # 충전 장소
-PICKUP_X,  PICKUP_Y,  PICKUP_YAW  = 1.0, 0.0, 0.0   # 택배 수령 장소
-DELIV_X,   DELIV_Y,   DELIV_YAW   = 2.0, 0.0, 0.0   # 택배 배달 장소
+CHARGE_X,  CHARGE_Y,  CHARGE_YAW  = -4.198, 0.2, deg(89.274)   # 충전 장소
+PICKUP_X,  PICKUP_Y,  PICKUP_YAW  = -6.326, 3.209, deg(-78.415)   # 택배 수령 장소
+DELIV_X,   DELIV_Y,   DELIV_YAW   = -4.19, 2.063, deg(-6.810)   # 택배 배달 장소
 
 
 def yaw_to_quaternion(yaw: float) -> Quaternion:
