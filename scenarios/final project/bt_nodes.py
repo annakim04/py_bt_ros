@@ -15,6 +15,8 @@ from modules.base_bt_nodes_ros import (
 from geometry_msgs.msg import PoseStamped, Quaternion
 from nav2_msgs.action import NavigateToPose
 
+def deg(d: float) -> float:
+    return math.radians(d)
 
 # ================================
 # 좌표 정의 (네 맵에 맞게 수정 필요!)
@@ -98,7 +100,7 @@ class MoveToDelivery(ActionWithROSAction):
 # 4) ReceiveParcel : 택배 수령 (더미, 항상 성공)
 # ============================================
 class ReceiveParcel(Node):
-    def __init__(self, name, agent, wait_sec: float = 1.0):
+    def __init__(self, name, agent, wait_sec: float = 3.0):
         super().__init__(name)
         self.wait_sec = wait_sec
         self._start_time = None
@@ -127,7 +129,7 @@ class ReceiveParcel(Node):
 # 5) DropoffParcel : 택배 배달 (더미, 항상 성공)
 # ============================================
 class DropoffParcel(Node):
-    def __init__(self, name, agent, wait_sec: float = 1.0):
+    def __init__(self, name, agent, wait_sec: float = 3.0):
         super().__init__(name)
         self.wait_sec = wait_sec
         self._start_time = None
