@@ -1,60 +1,40 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <root BTCPP_format="4">
-  <BehaviorTree ID="limo_parcel_loop">
-    <!--
-      시나리오
-      1) 처음 충전 장소로 이동
-      2) 택배 수령 장소로 이동
-      3) 수령 장소에서:
-         - 일정 시간 안에 택배 수령(버튼 pressed) 되면
-             → QR 인식 → 배달 → 다시 수령 장소로
-         - 시간 내에 수령 안 되면
-             → 충전 장소로 복귀
-    -->
-
-    <ReactiveSequence>
-
-      <!-- 0. 시작할 때 한 번 충전 장소로 이동 -->
-      <MoveToCharge/>
-
-      <!-- 1. 항상 수령 장소를 기준으로 동작 -->
+  <BehaviorTree ID="limo_delivery_tree">
+    <Sequence>
+      
       <MoveToPickup/>
 
-      <!-- 2. 수령 여부에 따라 분기 -->
-      <ReactiveFallback>
-
-        <!-- 2-1. 택배를 수령한 경우: 배달 루프 -->
+      <Fallback>
+        
         <Sequence>
-          <!-- 택배 수령 (pressed 되면 SUCCESS, 아니면 RUNNING/FAILURE) -->
-          <ReceiveParcel/>
+          <RetryUntilSuccessful num_attempts="60">
+            <ReceiveParcel/>
+          </RetryUntilSuccessful>
 
-          <!-- QR 위치 들어올 때까지 대기 -->
           <WaitForQRPose/>
-
-          <!-- QR로 받은 좌표로 이동 -->
           <MoveToDelivery/>
-
-          <!-- 버튼 release 되면 배달 완료 -->
           <DropoffParcel/>
-
-          <!-- 배달 끝나면 다시 수령 장소로 이동 -->
-          <MoveToPickup/>
         </Sequence>
 
-        <!-- 2-2. 택배를 수령하지 않은 경우(ReceiveParcel이 FAILURE) → 충전 장소로 이동 -->
         <MoveToCharge/>
-
-      </ReactiveFallback>
-    </ReactiveSequence>
+        
+      </Fallback>
+    </Sequence>
   </BehaviorTree>
 
-  <!-- 여기부터는 에디터용 노드 목록 -->
   <TreeNodesModel>
     <Action ID="MoveToCharge" editable="true"/>
     <Action ID="MoveToPickup" editable="true"/>
     <Action ID="MoveToDelivery" editable="true"/>
-    <Action ID="ReceiveParcel" editable="true"/>
-    <Action ID="DropoffParcel" editable="true"/>
-    <Action ID="WaitForQRPose" editable="true"/>
+
+    <Condition ID="ReceiveParcel" editable="true"/>
+    <Condition ID="DropoffParcel" editable="true"/>
+    <Condition ID="WaitForQRPose" editable="true"/>
+
+    <Decorator ID="RetryUntilSuccessful" editable="true">
+      <input_port name="num_attempts" default="1" type="int"/>
+    </Decorator>
   </TreeNodesModel>
+
 </root>
