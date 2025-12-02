@@ -116,19 +116,20 @@ class MoveToDelivery(ActionWithROSAction):
 class ReceiveParcel(Node):
     """
     /limo/button 토픽이 'pressed' 가 되었을 때 SUCCESS.
+    일정 시간 동안 안 눌리면 FAILURE (수령 안 함).
     그 전까지는 RUNNING.
     """
+    TIMEOUT_SEC = 30.0  # 원하는 시간으로 수정
+
     def __init__(self, name, agent):
         super().__init__(name)
         self.agent = agent
 
-        # 버튼 상태 초기값 (안 눌린 상태라고 가정)
         self._button_state = "release"
-
-        # rclpy Node 핸들
         self._node: RosNode = agent.ros_bridge.node
 
-        # /limo/button 구독
+        self._start_time = self._node.get_clock().now()  # 시작 시각 저장
+
         self._sub = self._node.create_subscription(
             String,
             "/limo/button",
@@ -143,17 +144,30 @@ class ReceiveParcel(Node):
         )
 
     async def run(self, agent, blackboard):
-        # 버튼이 pressed 가 되어야 수령 완료
+        # 1) 버튼이 pressed 되면 수령 성공
         if self._button_state.lower() == "pressed":
             self.status = Status.SUCCESS
             self._node.get_logger().info(
                 "[ReceiveParcel] 버튼 pressed → 택배 수령 완료"
             )
+            return self.status
+
+        # 2) 아직 안 눌렸으면, 타임아웃 체크
+        now = self._node.get_clock().now()
+        elapsed = (now.sec + now.nanosec * 1e-9) - (self._start_time.sec + self._start_time.nanosec * 1e-9)
+
+        if elapsed > self.TIMEOUT_SEC:
+            # 일정 시간 동안 안 눌렸으면 FAILURE → "수령 안 함"으로 판단
+            self.status = Status.FAILURE
+            self._node.get_logger().warn(
+                f"[ReceiveParcel] {self.TIMEOUT_SEC}초 동안 입력 없음 → 수령 실패"
+            )
         else:
-            # 아직 안 눌렸으면 계속 기다리기
+            # 아직 타임아웃 전이면 계속 기다림
             self.status = Status.RUNNING
 
         return self.status
+
 
 
 
