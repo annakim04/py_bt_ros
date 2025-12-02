@@ -14,6 +14,8 @@ from modules.base_bt_nodes_ros import (
 
 from geometry_msgs.msg import PoseStamped, Quaternion
 from nav2_msgs.action import NavigateToPose
+from std_msgs.msg import String
+
 
 def deg(d: float) -> float:
     return math.radians(d)
@@ -90,66 +92,158 @@ class MoveToDelivery(ActionWithROSAction):
         super().__init__(name, agent, (NavigateToPose, action_name))
 
     def _build_goal(self, agent, blackboard):
-        return _build_nav_goal(DELIV_X, DELIV_Y, DELIV_YAW, agent)
+        # WaitForQRPose 노드가 저장해둔 PoseStamped 를 가져옴
+        pose: PoseStamped = blackboard.get("qr_target_pose", None)
+
+        if pose is None:
+            agent.ros_bridge.node.get_logger().warn(
+                "[MoveToDelivery] qr_target_pose is None (QR 인식 정보가 아직 없음)"
+            )
+            return None  # Goal이 None이면 이 액션 노드는 FAILURE 취급됨
+
+        goal = NavigateToPose.Goal()
+        goal.pose = pose
+        return goal
 
     def _interpret_result(self, result, agent, blackboard, status_code=None):
         return Status.SUCCESS
+
 
 
 # ============================================
 # 4) ReceiveParcel : 택배 수령 (더미, 항상 성공)
 # ============================================
 class ReceiveParcel(Node):
-    def __init__(self, name, agent, wait_sec: float = 3.0):
+    """
+    /limo/button 토픽이 'pressed' 가 되었을 때 SUCCESS.
+    그 전까지는 RUNNING.
+    """
+    def __init__(self, name, agent):
         super().__init__(name)
-        self.wait_sec = wait_sec
-        self._start_time = None
+        self.agent = agent
+
+        # 버튼 상태 초기값 (안 눌린 상태라고 가정)
+        self._button_state = "release"
+
+        # rclpy Node 핸들
+        self._node: RosNode = agent.ros_bridge.node
+
+        # /limo/button 구독
+        self._sub = self._node.create_subscription(
+            String,
+            "/limo/button",
+            self._callback,
+            10
+        )
+
+    def _callback(self, msg: String):
+        self._button_state = msg.data.strip()
+        self._node.get_logger().info(
+            f"[ReceiveParcel] button state: {self._button_state}"
+        )
 
     async def run(self, agent, blackboard):
-        import time
-
-        # 처음 들어왔을 때 시작 시간 기록
-        if self._start_time is None:
-            self._start_time = time.time()
-            self.status = Status.RUNNING
-            return self.status
-
-        # wait_sec 만큼 기다린 뒤 SUCCESS 반환
-        if time.time() - self._start_time >= self.wait_sec:
-            self._start_time = None
-            print("[BT] ReceiveParcel: 택배 수령 완료 (더미 성공)")
+        # 버튼이 pressed 가 되어야 수령 완료
+        if self._button_state.lower() == "pressed":
             self.status = Status.SUCCESS
-            return self.status
+            self._node.get_logger().info(
+                "[ReceiveParcel] 버튼 pressed → 택배 수령 완료"
+            )
+        else:
+            # 아직 안 눌렸으면 계속 기다리기
+            self.status = Status.RUNNING
 
-        self.status = Status.RUNNING
         return self.status
+
 
 
 # ============================================
 # 5) DropoffParcel : 택배 배달 (더미, 항상 성공)
 # ============================================
 class DropoffParcel(Node):
-    def __init__(self, name, agent, wait_sec: float = 3.0):
+    """
+    /limo/button 토픽이 'release' 인 상태여야 SUCCESS.
+    (즉, 손을 떼서 놓은 상태)
+    """
+    def __init__(self, name, agent):
         super().__init__(name)
-        self.wait_sec = wait_sec
-        self._start_time = None
+        self.agent = agent
+
+        self._button_state = "release"
+        self._node: RosNode = agent.ros_bridge.node
+
+        self._sub = self._node.create_subscription(
+            String,
+            "/limo/button",
+            self._callback,
+            10
+        )
+
+    def _callback(self, msg: String):
+        self._button_state = msg.data.strip()
+        self._node.get_logger().info(
+            f"[DropoffParcel] button state: {self._button_state}"
+        )
 
     async def run(self, agent, blackboard):
-        import time
+        # 버튼이 release 상태여야 배달 완료
+        if self._button_state.lower() == "release":
+            self.status = Status.SUCCESS
+            self._node.get_logger().info(
+                "[DropoffParcel] 버튼 release → 택배 배달 완료"
+            )
+        else:
+            self.status = Status.RUNNING
 
-        if self._start_time is None:
-            self._start_time = time.time()
+        return self.status
+
+
+# ============================================
+# 6) WaitForQRPose : /qr_warehouse_pose 들어올 때까지 기다리는 노드
+# ============================================
+class WaitForQRPose(Node):
+    """
+    /qr_warehouse_pose (PoseStamped)를 한 번 받을 때까지 RUNNING.
+    받으면 blackboard['qr_target_pose'] 에 저장하고 SUCCESS.
+    """
+
+    def __init__(self, name, agent):
+        super().__init__(name)
+        self.agent = agent
+        self._pose = None
+
+        # agent.ros_bridge.node 를 rclpy Node 처럼 사용
+        self._node: RosNode = agent.ros_bridge.node
+        self._sub = self._node.create_subscription(
+            PoseStamped,
+            "/qr_warehouse_pose",
+            self._callback,
+            10
+        )
+
+    def _callback(self, msg: PoseStamped):
+        self._pose = msg
+        self._node.get_logger().info(
+            f"[WaitForQRPose] got pose from QR: "
+            f"x={msg.pose.position.x:.3f}, y={msg.pose.position.y:.3f}"
+        )
+
+    async def run(self, agent, blackboard):
+        # 아직 pose가 안 들어왔으면 계속 RUNNING
+        if self._pose is None:
             self.status = Status.RUNNING
             return self.status
 
-        if time.time() - self._start_time >= self.wait_sec:
-            self._start_time = None
-            print("[BT] DropoffParcel: 택배 배달 완료 (더미 성공)")
-            self.status = Status.SUCCESS
-            return self.status
+        # 받은 pose를 블랙보드에 저장
+        blackboard["qr_target_pose"] = self._pose
+        self._node.get_logger().info("[WaitForQRPose] stored pose to blackboard")
 
-        self.status = Status.RUNNING
+        # 한 번만 쓰고 초기화 (원하면 안 지워도 됨)
+        self._pose = None
+
+        self.status = Status.SUCCESS
         return self.status
+
 
 
 # ============================================
@@ -166,7 +260,11 @@ class BTNodeList:
         "MoveToDelivery",
         "ReceiveParcel",
         "DropoffParcel",
+        "WaitForQRPose",
     ]
 
     CONDITION_NODES = []
     DECORATOR_NODES = []
+
+    #limo/button
+    #pressed, release 둘중에 값 하나를 받음
