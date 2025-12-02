@@ -1,30 +1,68 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<root main_tree_to_execute="MainTree">
+<root BTCPP_format="4">
+  <BehaviorTree ID="limo_parcel_loop">
+    <!--
+      루트: 계속 반복되는 택배 시나리오
+      1) 수령 장소로 이동
+      2) 택배가 있으면: 수령 → (QR로 배달 목적지 설정) → 배달 → 다시 수령
+      3) 택배가 없으면: 충전 장소로 복귀
+    -->
+    <ReactiveSequence>
+      <Sequence>
 
-  <BehaviorTree ID="MainTree">
+        <!-- 1. 항상 먼저 수령 장소로 이동 -->
+        <SetPickupGoal/>
+        <MoveToGoal/>
 
-    <Sequence>
-      <MoveToCharge/>
+        <!-- 2. 수령 장소에 도착한 후, 택배 여부에 따라 분기 -->
+        <ReactiveFallback>
 
-      <!-- 1) 충전 장소 -> 택배 수령 장소 -->
-      <MoveToPickup/>
+          <!-- 2-1. 택배가 있는 경우: 수령 → (QR 기반 배달 목적지) → 배달 → 다시 수령 -->
+          <Sequence>
+            <HasParcel/>        <!-- 택배 있니? -->
+            <PickupParcel/>     <!-- 실제로 집어 올리기 (또는 placeholder) -->
 
-      <!-- 2) 택배 수령 (항상 성공, 더미) -->
-      <ReceiveParcel/>
+            <!-- QR 인식 결과(/qr_warehouse_pose)가 올 때까지 기다리고,
+                 그 좌표를 blackboard 등에 저장하는 노드 -->
+            <WaitForQRPose/>
 
-      <!-- 3) 수령 장소 -> 배달 장소 -->
-      <MoveToDelivery/>
+            <!-- 저장된 QR 좌표를 이용해 배달 목적지 goal 설정 -->
+            <SetDeliveryGoal/>
 
-      <!-- 4) 택배 배달 (항상 성공, 더미) -->
-      <DropoffParcel/>
+            <!-- 배달 장소(= QR로 받은 목적지)로 이동 -->
+            <MoveToGoal/>
 
-      <!-- 5) 배달 장소 -> 다시 수령 장소 -->
-      <MoveToPickup/>
+            <DropParcel/>       <!-- 내려놓기 (placeholder) -->
+            <SetPickupGoal/>    <!-- 다시 수령 장소로 -->
+            <MoveToGoal/>
+          </Sequence>
 
-      <!-- 6) 수령 장소 -> 충전 장소 복귀 -->
-      <MoveToCharge/>
-    </Sequence>
+          <!-- 2-2. 택배가 없는 경우: 충전 장소로 복귀 -->
+          <Sequence>
+            <SetChargeGoal/>
+            <MoveToGoal/>
+          </Sequence>
 
+        </ReactiveFallback>
+
+      </Sequence>
+    </ReactiveSequence>
   </BehaviorTree>
 
+  <!-- 여기는 BT Editor에서 노드를 선택할 수 있게 목록만 정의하는 부분 -->
+  <TreeNodesModel>
+    <!-- Conditions -->
+    <Condition ID="HasParcel" editable="true"/>
+
+    <!-- Actions -->
+    <Action ID="MoveToGoal" editable="true"/>
+    <Action ID="SetChargeGoal" editable="true"/>
+    <Action ID="SetPickupGoal" editable="true"/>
+    <Action ID="SetDeliveryGoal" editable="true"/>
+    <Action ID="PickupParcel" editable="true"/>
+    <Action ID="DropParcel" editable="true"/>
+
+    <!-- QR 인식 결과를 받을 때까지 기다리는 새 노드 -->
+    <Action ID="WaitForQRPose" editable="true"/>
+  </TreeNodesModel>
 </root>
