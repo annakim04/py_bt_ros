@@ -6,6 +6,8 @@ from modules.base_bt_nodes import (
     Node,
     Status,
     Sequence,
+    ReactiveSequence,
+    ReactiveFallback,
     BTNodeList as BaseBTNodeList
 )
 from modules.base_bt_nodes_ros import (
