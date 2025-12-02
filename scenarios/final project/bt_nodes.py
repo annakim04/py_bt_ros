@@ -2,285 +2,238 @@ import math
 import rclpy
 from rclpy.node import Node as RosNode
 
-from modules.base_bt_nodes import (
-    Node,
-    Status,
-    Sequence,
-    ReactiveSequence,
-    ReactiveFallback,
-    BTNodeList as BaseBTNodeList
-)
-from modules.base_bt_nodes_ros import (
-    ActionWithROSAction,
-)
+# =========================================================
+# 1. [핵심] py_trees 라이브러리 Import
+# =========================================================
+# XML에 있는 RetryUntilSuccessful 기능을 구현하기 위해 필요합니다.
+import py_trees
+from py_trees.decorators import Retry
 
+# ROS 2 Messages
 from geometry_msgs.msg import PoseStamped, Quaternion
 from nav2_msgs.action import NavigateToPose
 from std_msgs.msg import String
+from action_msgs.msg import GoalStatus
 
+# py_bt_ros 기본 모듈 Import
+# (사용하시는 환경의 경로와 일치해야 합니다)
+from modules.base_bt_nodes import BTNodeList, Status
+from modules.base_bt_nodes_ros import ConditionWithROSTopics, ActionWithROSAction
+
+
+# =========================================================
+# 2. 헬퍼 함수 및 좌표 정의
+# =========================================================
 
 def deg(d: float) -> float:
     return math.radians(d)
 
-# ================================
-# 좌표 정의 (네 맵에 맞게 수정 필요!)
-# ================================
-# 예시 값이니까, 실제 map 좌표로 꼭 바꿔줘!
-CHARGE_X,  CHARGE_Y,  CHARGE_YAW  = -4.198, 0.2, deg(89.274)   # 충전 장소
-PICKUP_X,  PICKUP_Y,  PICKUP_YAW  = -6.326, 3.209, deg(-78.415)   # 택배 수령 장소
-DELIV_X,   DELIV_Y,   DELIV_YAW   = -4.19, 2.063, deg(-6.810)   # 택배 배달 장소
-
-
 def yaw_to_quaternion(yaw: float) -> Quaternion:
-    """2D yaw(라디안) -> Quaternion (z, w만 사용)"""
+    """Yaw(rad) -> Quaternion 변환"""
     q = Quaternion()
     q.z = math.sin(yaw / 2.0)
     q.w = math.cos(yaw / 2.0)
     return q
 
-
-def _build_nav_goal(x: float, y: float, yaw: float, agent) -> NavigateToPose.Goal:
-    """주어진 (x, y, yaw)로 Nav2 NavigateToPose.Goal 생성 헬퍼"""
+def _create_nav_goal(node, x, y, yaw=None, pose_stamped=None):
+    """Nav2 Goal 메시지 생성 헬퍼"""
     goal = NavigateToPose.Goal()
-
-    ps = PoseStamped()
-    ps.header.frame_id = "map"
-    # agent 안에 ros_bridge가 있다고 가정 (WaitForGoal에서 쓰던 패턴)
-    ps.header.stamp = agent.ros_bridge.node.get_clock().now().to_msg()
-
-    ps.pose.position.x = x
-    ps.pose.position.y = y
-    ps.pose.position.z = 0.0
-    ps.pose.orientation = yaw_to_quaternion(yaw)
-
-    goal.pose = ps
+    
+    if pose_stamped:
+        # QR 코드 등에서 받은 전체 PoseStamped가 있다면 사용
+        goal.pose = pose_stamped
+    else:
+        # 직접 지정한 좌표(x, y, yaw) 사용
+        ps = PoseStamped()
+        ps.header.frame_id = "map"
+        ps.header.stamp = node.get_clock().now().to_msg()
+        ps.pose.position.x = x
+        ps.pose.position.y = y
+        ps.pose.position.z = 0.0
+        if yaw is not None:
+            ps.pose.orientation = yaw_to_quaternion(yaw)
+        else:
+            ps.pose.orientation.w = 1.0
+        goal.pose = ps
+        
     return goal
 
+# --- [사용자 맵 좌표 설정] ---
+# 충전 장소 (Charge)
+CHARGE_X,  CHARGE_Y,  CHARGE_YAW  = -4.198, 0.2, deg(89.274)
+# 택배 수령 장소 (Pickup)
+PICKUP_X,  PICKUP_Y,  PICKUP_YAW  = -6.326, 3.209, deg(-78.415)
 
-# ============================================
-# 1) MoveToCharge : 충전 장소로 이동
-# ============================================
+
+# =========================================================
+# 3. Custom Decorator (RetryUntilSuccessful)
+# =========================================================
+
+class RetryUntilSuccessful(Retry):
+    """
+    XML 태그: <RetryUntilSuccessful num_attempts="60">
+    설명: 자식 노드가 성공할 때까지 지정된 횟수만큼 재시도합니다.
+    (py_trees의 Retry 클래스를 상속받아 구현)
+    """
+    def __init__(self, name, child, num_attempts=1):
+        # XML의 'num_attempts'는 문자열로 올 수 있으므로 int 변환 필요
+        # 부모 클래스(Retry)는 'num_failures'라는 인자를 사용함
+        super(RetryUntilSuccessful, self).__init__(
+            name=name,
+            child=child,
+            num_failures=int(num_attempts)
+        )
+
+
+# =========================================================
+# 4. Condition Nodes (센서/토픽 확인)
+# =========================================================
+
+class ReceiveParcel(ConditionWithROSTopics):
+    """
+    역할: 택배 수령 버튼이 눌렸는지 확인 (토픽: /limo/button)
+    성공조건: data == "pressed"
+    """
+    def __init__(self, name, agent):
+        super().__init__(name, agent, [
+            (String, "/limo/button", "button_state") # (Type, Topic, CacheKey)
+        ])
+
+    def _predicate(self, agent, blackboard):
+        # 데이터가 아직 안 들어왔으면 False
+        if "button_state" not in self._cache:
+            return False
+        
+        # 데이터 확인
+        msg = self._cache["button_state"]
+        state = msg.data.strip().lower()
+        
+        return state == "pressed"
+
+
+class DropoffParcel(ConditionWithROSTopics):
+    """
+    역할: 택배 하차 확인 (버튼이 떼어졌는지 확인)
+    성공조건: data == "release"
+    """
+    def __init__(self, name, agent):
+        super().__init__(name, agent, [
+            (String, "/limo/button", "button_state")
+        ])
+
+    def _predicate(self, agent, blackboard):
+        if "button_state" not in self._cache:
+            return False
+        
+        msg = self._cache["button_state"]
+        state = msg.data.strip().lower()
+        
+        return state == "release"
+
+
+class WaitForQRPose(ConditionWithROSTopics):
+    """
+    역할: QR 코드 좌표 수신 대기 (/qr_warehouse_pose)
+    동작: 데이터가 들어오면 블랙보드('qr_target_pose')에 저장하고 Success 반환
+    """
+    def __init__(self, name, agent):
+        super().__init__(name, agent, [
+            (PoseStamped, "/qr_warehouse_pose", "qr_pose")
+        ])
+
+    def _predicate(self, agent, blackboard):
+        if "qr_pose" in self._cache:
+            # 블랙보드에 저장 (MoveToDelivery 노드가 사용함)
+            blackboard["qr_target_pose"] = self._cache["qr_pose"]
+            return True
+        return False
+
+
+# =========================================================
+# 5. Action Nodes (Nav2 이동)
+# =========================================================
+
 class MoveToCharge(ActionWithROSAction):
-    def __init__(self, name, agent, action_name="/navigate_to_pose"):
-        super().__init__(name, agent, (NavigateToPose, action_name))
+    """충전 장소로 이동"""
+    def __init__(self, name, agent):
+        super().__init__(name, agent, (NavigateToPose, "/navigate_to_pose"))
 
     def _build_goal(self, agent, blackboard):
-        return _build_nav_goal(CHARGE_X, CHARGE_Y, CHARGE_YAW, agent)
+        return _create_nav_goal(self.ros.node, CHARGE_X, CHARGE_Y, CHARGE_YAW)
 
     def _interpret_result(self, result, agent, blackboard, status_code=None):
-        # Nav2 결과를 세부적으로 보고 싶으면 여기서 처리
-        return Status.SUCCESS
+        if status_code == GoalStatus.STATUS_SUCCEEDED:
+            return Status.SUCCESS
+        return Status.FAILURE
 
 
-# ============================================
-# 2) MoveToPickup : 택배 수령 장소로 이동
-# ============================================
 class MoveToPickup(ActionWithROSAction):
-    def __init__(self, name, agent, action_name="/navigate_to_pose"):
-        super().__init__(name, agent, (NavigateToPose, action_name))
+    """택배 수령 장소로 이동"""
+    def __init__(self, name, agent):
+        super().__init__(name, agent, (NavigateToPose, "/navigate_to_pose"))
 
     def _build_goal(self, agent, blackboard):
-        return _build_nav_goal(PICKUP_X, PICKUP_Y, PICKUP_YAW, agent)
+        return _create_nav_goal(self.ros.node, PICKUP_X, PICKUP_Y, PICKUP_YAW)
 
     def _interpret_result(self, result, agent, blackboard, status_code=None):
-        return Status.SUCCESS
+        if status_code == GoalStatus.STATUS_SUCCEEDED:
+            return Status.SUCCESS
+        return Status.FAILURE
 
 
-# ============================================
-# 3) MoveToDelivery : 택배 배달 장소로 이동
-# ============================================
 class MoveToDelivery(ActionWithROSAction):
-    def __init__(self, name, agent, action_name="/navigate_to_pose"):
-        super().__init__(name, agent, (NavigateToPose, action_name))
+    """
+    택배 배달 장소로 이동
+    (WaitForQRPose가 블랙보드에 저장해둔 좌표 사용)
+    """
+    def __init__(self, name, agent):
+        super().__init__(name, agent, (NavigateToPose, "/navigate_to_pose"))
 
     def _build_goal(self, agent, blackboard):
-        # WaitForQRPose 노드가 저장해둔 PoseStamped 를 가져옴
-        pose: PoseStamped = blackboard.get("qr_target_pose", None)
+        # 블랙보드에서 목표 좌표 가져오기
+        qr_pose = blackboard.get("qr_target_pose")
+        
+        if qr_pose is None:
+            print("[MoveToDelivery] Error: QR Pose not found in blackboard!")
+            return None # None 리턴 시 Action 실패 처리됨
 
-        if pose is None:
-            agent.ros_bridge.node.get_logger().warn(
-                "[MoveToDelivery] qr_target_pose is None (QR 인식 정보가 아직 없음)"
-            )
-            return None  # Goal이 None이면 이 액션 노드는 FAILURE 취급됨
-
-        goal = NavigateToPose.Goal()
-        goal.pose = pose
-        return goal
+        return _create_nav_goal(self.ros.node, 0, 0, pose_stamped=qr_pose)
 
     def _interpret_result(self, result, agent, blackboard, status_code=None):
-        return Status.SUCCESS
+        if status_code == GoalStatus.STATUS_SUCCEEDED:
+            return Status.SUCCESS
+        return Status.FAILURE
 
 
+# =========================================================
+# 6. Node Registration (XML 파서에 등록)
+# =========================================================
 
-# ============================================
-# 4) ReceiveParcel : 택배 수령 (더미, 항상 성공)
-# ============================================
-class ReceiveParcel(Node):
-    """
-    /limo/button 토픽이 'pressed' 가 되었을 때 SUCCESS.
-    일정 시간 동안 안 눌리면 FAILURE (수령 안 함).
-    그 전까지는 RUNNING.
-    """
-    TIMEOUT_SEC = 30.0  # 원하는 시간으로 수정
+# 1) 정의한 노드 이름 리스트
+CUSTOM_ACTION_NODES = [
+    'MoveToCharge',
+    'MoveToPickup',
+    'MoveToDelivery',
+]
 
-    def __init__(self, name, agent):
-        super().__init__(name)
-        self.agent = agent
+CUSTOM_CONDITION_NODES = [
+    'ReceiveParcel',
+    'DropoffParcel',
+    'WaitForQRPose',
+]
 
-        self._button_state = "release"
-        self._node: RosNode = agent.ros_bridge.node
+CUSTOM_DECORATOR_NODES = [
+    'RetryUntilSuccessful'
+]
 
-        self._start_time = self._node.get_clock().now()  # 시작 시각 저장
+# 2) BTNodeList 확장 (Module 로딩 시 자동 실행)
+BTNodeList.ACTION_NODES.extend(CUSTOM_ACTION_NODES)
+BTNodeList.CONDITION_NODES.extend(CUSTOM_CONDITION_NODES)
 
-        self._sub = self._node.create_subscription(
-            String,
-            "/limo/button",
-            self._callback,
-            10
-        )
-
-    def _callback(self, msg: String):
-        self._button_state = msg.data.strip()
-        self._node.get_logger().info(
-            f"[ReceiveParcel] button state: {self._button_state}"
-        )
-
-    async def run(self, agent, blackboard):
-        # 1) 버튼이 pressed 되면 수령 성공
-        if self._button_state.lower() == "pressed":
-            self.status = Status.SUCCESS
-            self._node.get_logger().info(
-                "[ReceiveParcel] 버튼 pressed → 택배 수령 완료"
-            )
-            return self.status
-
-        # 2) 아직 안 눌렸으면, 타임아웃 체크
-        now = self._node.get_clock().now()
-        elapsed = (now.sec + now.nanosec * 1e-9) - (self._start_time.sec + self._start_time.nanosec * 1e-9)
-
-        if elapsed > self.TIMEOUT_SEC:
-            # 일정 시간 동안 안 눌렸으면 FAILURE → "수령 안 함"으로 판단
-            self.status = Status.FAILURE
-            self._node.get_logger().warn(
-                f"[ReceiveParcel] {self.TIMEOUT_SEC}초 동안 입력 없음 → 수령 실패"
-            )
-        else:
-            # 아직 타임아웃 전이면 계속 기다림
-            self.status = Status.RUNNING
-
-        return self.status
-
-
-
-
-# ============================================
-# 5) DropoffParcel : 택배 배달 (더미, 항상 성공)
-# ============================================
-class DropoffParcel(Node):
-    """
-    /limo/button 토픽이 'release' 인 상태여야 SUCCESS.
-    (즉, 손을 떼서 놓은 상태)
-    """
-    def __init__(self, name, agent):
-        super().__init__(name)
-        self.agent = agent
-
-        self._button_state = "release"
-        self._node: RosNode = agent.ros_bridge.node
-
-        self._sub = self._node.create_subscription(
-            String,
-            "/limo/button",
-            self._callback,
-            10
-        )
-
-    def _callback(self, msg: String):
-        self._button_state = msg.data.strip()
-        self._node.get_logger().info(
-            f"[DropoffParcel] button state: {self._button_state}"
-        )
-
-    async def run(self, agent, blackboard):
-        # 버튼이 release 상태여야 배달 완료
-        if self._button_state.lower() == "release":
-            self.status = Status.SUCCESS
-            self._node.get_logger().info(
-                "[DropoffParcel] 버튼 release → 택배 배달 완료"
-            )
-        else:
-            self.status = Status.RUNNING
-
-        return self.status
-
-
-# ============================================
-# 6) WaitForQRPose : /qr_warehouse_pose 들어올 때까지 기다리는 노드
-# ============================================
-class WaitForQRPose(Node):
-    """
-    /qr_warehouse_pose (PoseStamped)를 한 번 받을 때까지 RUNNING.
-    받으면 blackboard['qr_target_pose'] 에 저장하고 SUCCESS.
-    """
-
-    def __init__(self, name, agent):
-        super().__init__(name)
-        self.agent = agent
-        self._pose = None
-
-        # agent.ros_bridge.node 를 rclpy Node 처럼 사용
-        self._node: RosNode = agent.ros_bridge.node
-        self._sub = self._node.create_subscription(
-            PoseStamped,
-            "/qr_warehouse_pose",
-            self._callback,
-            10
-        )
-
-    def _callback(self, msg: PoseStamped):
-        self._pose = msg
-        self._node.get_logger().info(
-            f"[WaitForQRPose] got pose from QR: "
-            f"x={msg.pose.position.x:.3f}, y={msg.pose.position.y:.3f}"
-        )
-
-    async def run(self, agent, blackboard):
-        # 아직 pose가 안 들어왔으면 계속 RUNNING
-        if self._pose is None:
-            self.status = Status.RUNNING
-            return self.status
-
-        # 받은 pose를 블랙보드에 저장
-        blackboard["qr_target_pose"] = self._pose
-        self._node.get_logger().info("[WaitForQRPose] stored pose to blackboard")
-
-        # 한 번만 쓰고 초기화 (원하면 안 지워도 됨)
-        self._pose = None
-
-        self.status = Status.SUCCESS
-        return self.status
-
-
-
-# ============================================
-# BT Node Registration
-# ============================================
-class BTNodeList:
-    # Sequence / Fallback 등 기본 CONTROL_NODES는 그대로 재사용
-    CONTROL_NODES = BaseBTNodeList.CONTROL_NODES
-
-    # 우리가 새로 정의한 Action/Leaf 노드들 이름
-    ACTION_NODES = [
-        "MoveToCharge",
-        "MoveToPickup",
-        "MoveToDelivery",
-        "ReceiveParcel",
-        "DropoffParcel",
-        "WaitForQRPose",
-    ]
-
-    CONDITION_NODES = []
-    DECORATOR_NODES = []
-
-    #limo/button
-    #pressed, release 둘중에 값 하나를 받음
+# [중요] Decorator 등록
+# XML 파서가 <RetryUntilSuccessful> 태그를 인식하려면 CONTROL_NODES나 ACTION_NODES에 있어야 함
+if hasattr(BTNodeList, 'CONTROL_NODES'):
+    BTNodeList.CONTROL_NODES.extend(CUSTOM_DECORATOR_NODES)
+else:
+    # 만약 베이스 코드에 CONTROL_NODES 리스트가 없다면 Action 리스트에 추가
+    BTNodeList.ACTION_NODES.extend(CUSTOM_DECORATOR_NODES)
