@@ -3,21 +3,24 @@
   <BehaviorTree ID="limo_delivery_tree">
     <Sequence>
       
-      <MoveToPickup/>
+      <MoveToPickup name="Go to Pickup Point"/>
 
       <Fallback>
         
         <Sequence>
+          <Timeout duration="30.0">
+            <WaitForQRPose name="Search QR Code"/>
+          </Timeout>
+
           <RetryUntilSuccessful num_attempts="60">
-            <ReceiveParcel/>
+            <ReceiveParcel name="Check Parcel Loaded"/>
           </RetryUntilSuccessful>
 
-          <WaitForQRPose/>
-          <MoveToDelivery/>
-          <DropoffParcel/>
+          <MoveToDelivery name="Move to Delivery Point"/>
+          <DropoffParcel name="Wait for Unloading"/>
         </Sequence>
 
-        <MoveToCharge/>
+        <MoveToCharge name="Return to Charger"/>
         
       </Fallback>
     </Sequence>
@@ -27,14 +30,15 @@
     <Action ID="MoveToCharge" editable="true"/>
     <Action ID="MoveToPickup" editable="true"/>
     <Action ID="MoveToDelivery" editable="true"/>
-
     <Condition ID="ReceiveParcel" editable="true"/>
     <Condition ID="DropoffParcel" editable="true"/>
     <Condition ID="WaitForQRPose" editable="true"/>
-
+    
     <Decorator ID="RetryUntilSuccessful" editable="true">
       <input_port name="num_attempts" default="1" type="int"/>
     </Decorator>
+    <Decorator ID="Timeout" editable="true">
+      <input_port name="duration" default="10.0" type="float"/>
+    </Decorator>
   </TreeNodesModel>
-
 </root>
