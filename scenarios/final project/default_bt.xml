@@ -8,7 +8,7 @@
       <Fallback>
         
         <Sequence>
-          <Timeout duration="30.0">
+          <Timeout duration="10.0">
             <WaitForQRPose name="Search QR Code"/>
           </Timeout>
 
@@ -30,9 +30,8 @@
     <Action ID="MoveToCharge" editable="true"/>
     <Action ID="MoveToPickup" editable="true"/>
     <Action ID="MoveToDelivery" editable="true"/>
-    <Condition ID="ReceiveParcel" editable="true"/>
+    <Action ID="WaitForQRPose" editable="true"/> <Condition ID="ReceiveParcel" editable="true"/>
     <Condition ID="DropoffParcel" editable="true"/>
-    <Condition ID="WaitForQRPose" editable="true"/>
     
     <Decorator ID="RetryUntilSuccessful" editable="true">
       <input_port name="num_attempts" default="1" type="int"/>
