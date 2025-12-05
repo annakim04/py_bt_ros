@@ -171,7 +171,7 @@ class Timeout(Node):
 class ReceiveParcel(ConditionWithROSTopics):
     def __init__(self, node_name, agent, name=None):
         final_name = name if name else node_name
-        super().__init__(final_name, agent, [(String, "/limo/button", "button_state")])
+        super().__init__(final_name, agent, [(String, "/limo/button_status", "button_state")])
 
     def _predicate(self, agent, blackboard):
         # 1. 데이터가 아예 안 들어온 경우
@@ -198,7 +198,7 @@ class ReceiveParcel(ConditionWithROSTopics):
 class DropoffParcel(ConditionWithROSTopics):
     def __init__(self, node_name, agent, name=None):
         final_name = name if name else node_name
-        super().__init__(final_name, agent, [(String, "/limo/button", "button_state")])
+        super().__init__(final_name, agent, [(String, "/limo/button_status", "button_state")])
 
     def _predicate(self, agent, blackboard):
         if "button_state" not in self._cache: return False
