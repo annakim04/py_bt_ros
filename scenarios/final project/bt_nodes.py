@@ -1,5 +1,5 @@
 # scenarios/final_project/bt_nodes.py
-#qw
+
 import math
 import time
 import rclpy
@@ -44,7 +44,7 @@ def _create_nav_goal(node, x, y, yaw=None, pose_stamped=None):
         goal.pose = ps
     return goal
 
-# [좌표 설정]
+# [좌표 설정] - 사용자 환경에 맞게 수정 필요
 CHARGE_X,  CHARGE_Y,  CHARGE_YAW  = -4.198, 0.200, deg(0.0)
 PICKUP_X,  PICKUP_Y,  PICKUP_YAW  = -6.326, 3.209, deg(90.0)
 
@@ -62,11 +62,10 @@ class RetryUntilSuccessful(Node):
         self.child = child
         self.max_attempts = int(num_attempts)
         self.attempts = 0
-        self.is_running = False # 실행 중인지 체크하는 플래그
+        self.is_running = False 
         self.type = "Decorator"
 
     async def run(self, agent, blackboard):
-        # 처음 실행이면 카운트 초기화
         if not self.is_running:
             self.attempts = 0
             self.is_running = True
@@ -95,14 +94,11 @@ class RetryUntilSuccessful(Node):
         return Status.RUNNING
 
     def reset(self):
-        # [핵심] 강제 reset이 들어와도 실행 중이면 카운트를 유지함
         super().reset()
         if hasattr(self.child, 'reset'):
             self.child.reset()
-        # self.attempts = 0  <-- 이걸 지워서 상태 유지
 
     def halt(self):
-        # 진짜로 중단될 때만 초기화
         self.is_running = False
         self.attempts = 0
         if hasattr(self.child, 'halt'):
@@ -115,11 +111,11 @@ class Timeout(Node):
         self.child = child
         self.duration = float(duration)
         self.start_time = None
-        self.is_running = False # 실행 중인지 체크하는 플래그
+        self.is_running = False 
         self.type = "Decorator"
 
     async def run(self, agent, blackboard):
-        # [핵심] 실행 중이 아니었다면 시간 시작
+        # [핵심] 처음 시작할 때만 타이머 시작
         if not self.is_running or self.start_time is None:
             self.start_time = time.time()
             self.is_running = True
@@ -127,15 +123,16 @@ class Timeout(Node):
 
         elapsed = time.time() - self.start_time
         
-        # 로그 출력 (1초 단위)
+        # 1초마다 남은 시간 출력
         if int(elapsed * 10) % 10 == 0:
              print(f"[{self.name}] ... {elapsed:.1f}s / {self.duration}s")
 
+        # 시간 초과 체크
         if elapsed > self.duration:
             print(f"[{self.name}] 🚨 TIMEOUT! ({elapsed:.1f}s). Force FAILURE.")
             if hasattr(self.child, 'halt'):
                 self.child.halt()
-            self.is_running = False # 종료 처리
+            self.is_running = False 
             self.status = Status.FAILURE
             return Status.FAILURE
 
@@ -156,14 +153,12 @@ class Timeout(Node):
         return Status.RUNNING
 
     def reset(self):
-        # [핵심] 프레임워크가 매 틱마다 reset을 호출해도 시간은 초기화하지 않음
+        # [핵심] 외부 reset 신호에도 시간은 유지
         super().reset()
         if hasattr(self.child, 'reset'):
             self.child.reset()
-        # self.start_time = None <-- 이걸 지워서 시간 유지!
 
     def halt(self):
-        # 트리가 강제로 이 노드를 끌 때만 시간 초기화
         self.is_running = False
         self.start_time = None
         if hasattr(self.child, 'halt'):
@@ -171,7 +166,7 @@ class Timeout(Node):
 
 
 # =========================================================
-# 2. Condition Nodes (수정됨: 인자 충돌 방지)
+# 2. Condition Nodes (인자 충돌 방지 적용)
 # =========================================================
 class ReceiveParcel(ConditionWithROSTopics):
     def __init__(self, node_name, agent, name=None):
@@ -179,12 +174,25 @@ class ReceiveParcel(ConditionWithROSTopics):
         super().__init__(final_name, agent, [(String, "/limo/button", "button_state")])
 
     def _predicate(self, agent, blackboard):
-        if "button_state" not in self._cache: return False
+        # 1. 데이터가 아예 안 들어온 경우
+        if "button_state" not in self._cache:
+            # 너무 자주 뜨면 주석 처리 가능
+            print(f"[{self.name}] ⏳ Waiting for /limo/button data...") 
+            return False
         
-        data = self._cache["button_state"].data.strip().lower()
-        if data == "pressed":
+        # 2. 데이터가 들어온 경우: 내용 확인
+        msg = self._cache["button_state"]
+        raw_data = msg.data.strip().lower()
+        
+        # [디버깅] 현재 버튼 상태 출력
+        print(f"[{self.name}] 🔘 Button State: '{raw_data}'")
+        
+        if raw_data == "pressed":
+            print(f"[{self.name}] ✅ Button PRESSED! Moving to next step.")
+            # 버튼 확인 후 캐시 삭제 (한번 누르면 소모됨)
             del self._cache["button_state"]
             return True
+            
         return False
 
 class DropoffParcel(ConditionWithROSTopics):
@@ -201,42 +209,66 @@ class DropoffParcel(ConditionWithROSTopics):
             return True
         return False
 
+# [수정된 WaitForQRPose] - QoS 호환성 해결 버전
+# [수정된 WaitForQRPose]
 class WaitForQRPose(Node):
     def __init__(self, node_name, agent, name=None):
         final_name = name if name else node_name
         super().__init__(final_name)
         self.ros = agent.ros_bridge
-        self.qr_cache = None
+
+        # 콜백에서 받은 Pose를 저장할 변수
+        self.qr_pose = None
         
         self.sub = self.ros.node.create_subscription(
             PoseStamped, 
-            "/qr_warehouse_pose", 
+            "/qr_warehouse_pose",   # publisher와 동일하게 절대 토픽명
             self.listener_callback, 
             10
         )
         self.type = "Action" 
 
-    def listener_callback(self, msg):
-        self.qr_cache = msg
+    def listener_callback(self, msg: PoseStamped):
+        # 👉 여기서 x, y 모두 찍기
+        x = msg.pose.position.x
+        y = msg.pose.position.y
+        print(f"[WaitForQRPose] ✉ DATA RECEIVED! x={x:.3f}, y={y:.3f}")
+        print(f"[WaitForQRPose]    frame_id={msg.header.frame_id}")
+        # run()에서 사용할 Pose 저장
+        self.qr_pose = msg
 
     async def run(self, agent, blackboard):
-        if self.qr_cache is not None:
-            print("[WaitForQRPose] ✅ QR Code Detected! Saving to blackboard.")
-            blackboard["qr_target_pose"] = self.qr_cache
-            self.qr_cache = None 
+        # 콜백에서 Pose가 들어왔으면 SUCCESS
+        if self.qr_pose is not None:
+            print("[WaitForQRPose] ✅ QR Pose Detected! Saving to blackboard.")
+            # Blackboard에 저장해서 MoveToDelivery에서 사용
+            blackboard["qr_target_pose"] = self.qr_pose
+
+            # 여기서 바로 성공 처리
             self.status = Status.SUCCESS
             return Status.SUCCESS
-        
+
+        # 아직 Pose 못 받았으면 계속 기다림
+        print("[WaitForQRPose] ⏳ Waiting for QR Pose...")
         self.status = Status.RUNNING
         return Status.RUNNING
 
     def reset(self):
+        # ⚠️ 중요: Timeout이 매 틱마다 reset()을 호출하더라도
+        #         qr_pose는 지우지 않아야 함 (그래야 run()이 볼 수 있음)
         super().reset()
-        self.qr_cache = None
+        # self.qr_pose = None  # ← 이 줄은 절대 쓰지 말 것!
+        # 필요하면 halt()에서만 지워도 됨
+
+    def halt(self):
+        # 트리에서 완전히 빠질 때만 Pose 제거
+        self.qr_pose = None
+        if hasattr(super(), "halt"):
+            super().halt()
 
 
 # =========================================================
-# 3. Action Nodes (수정됨: 인자 충돌 방지)
+# 3. Action Nodes (인자 충돌 방지 적용)
 # =========================================================
 class MoveToCharge(ActionWithROSAction):
     def __init__(self, node_name, agent, name=None):
