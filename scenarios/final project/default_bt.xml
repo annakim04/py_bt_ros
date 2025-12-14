@@ -1,57 +1,75 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<root BTCPP_format="4">
-  <BehaviorTree ID="limo_delivery_tree">
-    <Sequence>
-      
-      <MoveToPickup name="Go to Pickup Point"/>
 
-      <Fallback>
-        
+<root main_tree_to_execute="MainTree">
+
+  <BehaviorTree ID="MainTree">
+
+    <!-- 전체를 계속 감시 -->
+    <ReactiveSequence>
+
+      <!-- ================================================= -->
+      <!-- PICKUP PHASE -->
+      <!-- ================================================= -->
+      <ReactiveFallback>
+
+        <!-- 택배 있음 + 수령 로직 -->
         <Sequence>
-          <Timeout duration="10.0">
-            <WaitForQRPose name="Search QR Code"/>
-          </Timeout>
 
-          <RetryUntilSuccessful num_attempts="60">
-            <ReceiveParcel name="Check Parcel Loaded"/>
-          </RetryUntilSuccessful>
+          <!-- 1차 조건: 택배 존재 -->
+          <ParcelAvailable/>
 
+          <!-- 2차 조건: 다른 로봇 수령 중? -->
           <ReactiveFallback>
-             <ReactiveSequence>
-                <IsButtonPressed name="Check Button Holding"/>
-                <MoveToDelivery name="Move to Delivery Point"/>
-             </ReactiveSequence>
-             
-             <SpinInPlace name="Spinning (Wait for Button)"/>
+
+            <!-- 다른 로봇 수령 중이면 대기 -->
+            <ReactiveSequence>
+              <OtherRobotReceiving/>
+              <MoveToWaiting/>
+            </ReactiveSequence>
+
+            <!-- 아니면 내가 픽업 -->
+            <MoveToPickup/>
+
           </ReactiveFallback>
 
-          <RetryUntilSuccessful num_attempts="999999">
-            <DropoffParcel name="Wait for Unloading"/>
-          </RetryUntilSuccessful>
-          
+          <!-- 수령 버튼 (타임아웃 보호) -->
+          <Timeout duration="10.0">
+            <ReceiveParcel/>
+          </Timeout>
+
+          <!-- QR 인식 -->
+          <WaitForQRPose/>
+
+          <!-- ================================================= -->
+          <!-- DELIVERY PHASE -->
+          <!-- ================================================= -->
+          <ReactiveFallback>
+
+            <!-- 다른 로봇 배달 중이면 대기 -->
+            <Sequence>
+              <OtherRobotDropping/>
+              <MoveToWaiting/>
+            </Sequence>
+
+            <!-- 아니면 배달 -->
+            <MoveToDelivery/>
+
+          </ReactiveFallback>
+
+          <!-- 배달 완료 -->
+          <DropoffParcel/>
+
         </Sequence>
 
-        <MoveToCharge name="Return to Charger"/>
-        
-      </Fallback>
-    </Sequence>
+        <!-- ================================================= -->
+        <!-- 택배 없으면 충전 -->
+        <!-- ================================================= -->
+        <MoveToCharge/>
+
+      </ReactiveFallback>
+
+    </ReactiveSequence>
+
   </BehaviorTree>
 
-  <TreeNodesModel>
-    <Action ID="MoveToCharge" editable="true"/>
-    <Action ID="MoveToPickup" editable="true"/>
-    <Action ID="MoveToDelivery" editable="true"/>
-    <Action ID="WaitForQRPose" editable="true"/>
-    <Action ID="SpinInPlace" editable="true"/>
-    <Condition ID="ReceiveParcel" editable="true"/>
-    <Condition ID="DropoffParcel" editable="true"/>
-    <Condition ID="IsButtonPressed" editable="true"/>
-    
-    <Decorator ID="RetryUntilSuccessful" editable="true">
-      <input_port name="num_attempts" default="1" type="int"/>
-    </Decorator>
-    <Decorator ID="Timeout" editable="true">
-      <input_port name="duration" default="10.0" type="float"/>
-    </Decorator>
-  </TreeNodesModel>
 </root>
