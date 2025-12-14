@@ -61,18 +61,18 @@ class RetryUntilSuccessful(Node):
             self.is_running = True
 
         result = await self.child.run(agent, blackboard) #자식 노드를 실행하고 결과를 받아옴
-        
+       
         #자식 노드가 성공한 경우 성공 반환
         if result == Status.SUCCESS:
             self.is_running = False #재시도 루프 종료
             self.status = Status.SUCCESS
             return Status.SUCCESS
-        
+       
         #자식 노드가 실패한 경우 실패 반환
         elif result == Status.FAILURE:
             self.attempts += 1 #실패 카운트 증가
             #로그를 너무 자주 뜨지 않게 하기 위해 10번에 한번만 출력
-            if self.attempts % 10 == 0: 
+            if self.attempts % 10 == 0:
                 print(f"[{self.name}] Retrying... ({self.attempts}/{self.max_attempts})")
             #아직 재시도 기회가 남은 경우 실행 중 상태를 반환
             if self.attempts < self.max_attempts:
@@ -122,7 +122,7 @@ class Timeout(Node):
 
         #경과 시간 계산
         elapsed = time.time() - self.start_time
-        
+       
         # 1초마다 남은 시간 출력
         if int(elapsed * 10) % 10 == 0:
             print(f"[{self.name}] ... {elapsed:.1f}s / {self.duration}s")
@@ -133,26 +133,26 @@ class Timeout(Node):
             #자식 노드에게 중단 명령(halt)을 내림
             if hasattr(self.child, 'halt'):
                 self.child.halt()
-            self.is_running = False 
+            self.is_running = False
             self.status = Status.FAILURE
             return Status.FAILURE
 
         #아직 시간이 남았다면, 자식 노드를 실행
         result = await self.child.run(agent, blackboard)
-        
+       
         #자식 노드가 시간 안에 성공한 경우
         if result == Status.SUCCESS:
             print(f"[{self.name}] Child Succeeded!")
             self.is_running = False #타이머 종료
             self.status = Status.SUCCESS
             return Status.SUCCESS
-        
+       
         #자식 노드가 스스로 실패했을 때
         if result == Status.FAILURE:
             self.is_running = False #타이머 종료
             self.status = Status.FAILURE
             return Status.FAILURE
-        
+       
         #자식 노드가 RUNNING인 경우
         self.status = Status.RUNNING
         return Status.RUNNING
@@ -175,50 +175,43 @@ class Timeout(Node):
 
 
 #컨디션 노드
-class ReceiveParcel(ConditionWithROSTopics): #택배 수령 여부를 판단하는 노드
+class ReceiveParcel(ConditionWithROSTopics):
     def __init__(self, node_name, agent, name=None):
         final_name = name if name else node_name
-        super().__init__(final_name, agent, [(String, "/limo/button_status", "button_state")])
+        super().__init__(final_name, agent,
+                         [(String, "/limo/button_status", "button_state")])
 
     def _predicate(self, agent, blackboard):
-        #데이터가 아예 안 들어온 경우
         if "button_state" not in self._cache:
-            print(f"[{self.name}] Waiting for /limo/button data") 
             return False
-        
-        # 데이터가 들어온 경우 내용 확인함
-        msg = self._cache["button_state"]
-        raw_data = msg.data.strip().lower()
-        
-        #현재 버튼 상태 출력
-        print(f"[{self.name}] Button State: '{raw_data}'")
-        
-        if raw_data == "pressed":
-            print(f"[{self.name}] Button PRESSED! Moving to next step.")
-            # 버튼 확인 후 캐시 삭제 (한번 누르면 소모)
-            del self._cache["button_state"]
+
+        state = self._cache["button_state"].data.strip().lower()
+        print(f"[{self.name}] 🔘 Button State = {state}")
+
+        if state == "pressed":
+            # 상태 플래그 저장
+            blackboard["parcel_received"] = True
             return True
-            
+
         return False
 
-class DropoffParcel(ConditionWithROSTopics): #택배 배달 여부를 판단하는 노드
+class DropoffParcel(ConditionWithROSTopics):
     def __init__(self, node_name, agent, name=None):
         final_name = name if name else node_name
-        super().__init__(final_name, agent, [(String, "/limo/button_status", "button_state")])
+        super().__init__(final_name, agent,
+                         [(String, "/limo/button_status", "button_state")])
 
     def _predicate(self, agent, blackboard):
-        #데이터가 아예 안 들어온 경우
         if "button_state" not in self._cache:
-            print(f"[{self.name}] Waiting for /limo/button data") 
             return False
-        
+
         state = self._cache["button_state"].data.strip().lower()
+        print(f"[{self.name}] 🔘 Button State = {state}")
+
         if state == "released":
-            print(f"[{self.name}] Button released! Moving to next step.")
-            # 버튼 확인 후 캐시 삭제 (한번 누르면 소모)
-            del self._cache["button_state"]
+            blackboard["parcel_dropped"] = True
             return True
-        
+
         return False
 
 class WaitForQRPose(ConditionWithROSTopics): #배달 장소 인식 여부를 판단하는 노드
@@ -231,7 +224,7 @@ class WaitForQRPose(ConditionWithROSTopics): #배달 장소 인식 여부를 판
         if "qr_pose" not in self._cache:
             print(f"[{self.name}] Waiting for QR data")
             return False
-        
+       
         #이동할 x,y 좌표를 데이터를 안전하게 넘겨주기 위해 캐시에 저장
         '''
         행동 트리(MoveToDelivery)가 블랙보드에 있는 좌표 (X=10, Y=20)을 읽으려고 합니다.
@@ -243,7 +236,7 @@ class WaitForQRPose(ConditionWithROSTopics): #배달 장소 인식 여부를 판
         행동 트리는 X는 옛날 것(10), Y는 새것(90)을 읽어서 (10, 90)이라는 존재하지 않는 이상한 좌표로 이동해버릴 수 있습니다.
         '''
         msg = self._cache["qr_pose"]
-        
+       
         # 이동할 x,y 좌표를 출력
         x = msg.pose.position.x
         y = msg.pose.position.y
@@ -263,9 +256,9 @@ class IsButtonPressed(ConditionWithROSTopics): #택배 운송 여부를 판단�
         super().__init__(final_name, agent, [(String, "/limo/button_status", "button_state")])
 
     def _predicate(self, agent, blackboard):
-        if "button_state" not in self._cache: 
+        if "button_state" not in self._cache:
             return False # 데이터 없으면 안 눌린 것으로 간주
-        
+       
         data = self._cache["button_state"].data.strip().lower()
         # pressed 상태면 True, 아니면 False (데이터를 지우지 않음!)
         return (data == "pressed")
@@ -301,12 +294,12 @@ class MoveToDelivery(ActionWithROSAction): #배달 장소로 이동하는 액션
     #백보드에 저장한 x,y좌표를 Nav2에 전송
     def _build_goal(self, agent, blackboard):
         qr_pose = blackboard.get("qr_target_pose")
-        if qr_pose is None: 
+        if qr_pose is None:
             print(f"[{self.name}] ERROR: No QR Pose in blackboard")
             return None
         print(f"[{self.name}] Moving to Delivery Point (from QR)")
         return _create_nav_goal(self.ros.node, 0, 0, pose_stamped=qr_pose)
-    
+   
     #Nav2에 전송을 성공 실패 여부 확인
     def _interpret_result(self, result, agent, blackboard, status_code=None):
         if status_code == GoalStatus.STATUS_SUCCEEDED:
