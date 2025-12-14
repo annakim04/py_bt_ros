@@ -16,8 +16,19 @@
             <ReceiveParcel name="Check Parcel Loaded"/>
           </RetryUntilSuccessful>
 
-          <MoveToDelivery name="Move to Delivery Point"/>
-          <DropoffParcel name="Wait for Unloading"/>
+          <ReactiveFallback>
+             <ReactiveSequence>
+                <IsButtonPressed name="Check Button Holding"/>
+                <MoveToDelivery name="Move to Delivery Point"/>
+             </ReactiveSequence>
+             
+             <SpinInPlace name="Spinning (Wait for Button)"/>
+          </ReactiveFallback>
+
+          <RetryUntilSuccessful num_attempts="999999">
+            <DropoffParcel name="Wait for Unloading"/>
+          </RetryUntilSuccessful>
+          
         </Sequence>
 
         <MoveToCharge name="Return to Charger"/>
@@ -30,8 +41,11 @@
     <Action ID="MoveToCharge" editable="true"/>
     <Action ID="MoveToPickup" editable="true"/>
     <Action ID="MoveToDelivery" editable="true"/>
-    <Action ID="WaitForQRPose" editable="true"/> <Condition ID="ReceiveParcel" editable="true"/>
+    <Action ID="WaitForQRPose" editable="true"/>
+    <Action ID="SpinInPlace" editable="true"/>
+    <Condition ID="ReceiveParcel" editable="true"/>
     <Condition ID="DropoffParcel" editable="true"/>
+    <Condition ID="IsButtonPressed" editable="true"/>
     
     <Decorator ID="RetryUntilSuccessful" editable="true">
       <input_port name="num_attempts" default="1" type="int"/>
