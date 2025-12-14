@@ -176,43 +176,42 @@ class Timeout(Node):
 
 #컨디션 노드
 class ReceiveParcel(ConditionWithROSTopics):
-    def __init__(self, node_name, agent, name=None):
-        final_name = name if name else node_name
-        super().__init__(final_name, agent,
-                         [(String, "/limo/button_status", "button_state")])
-
     def _predicate(self, agent, blackboard):
         if "button_state" not in self._cache:
             return False
 
+        # 이미 배송 중이면 pressed 무시
+        if blackboard.get("delivery_active", False):
+            return False
+
         state = self._cache["button_state"].data.strip().lower()
-        print(f"[{self.name}] 🔘 Button State = {state}")
 
         if state == "pressed":
-            # 상태 플래그 저장
-            blackboard["parcel_received"] = True
+            print("[ReceiveParcel] pressed → start delivery")
+            blackboard["delivery_active"] = True
             return True
 
         return False
 
-class DropoffParcel(ConditionWithROSTopics):
-    def __init__(self, node_name, agent, name=None):
-        final_name = name if name else node_name
-        super().__init__(final_name, agent,
-                         [(String, "/limo/button_status", "button_state")])
 
+class DropoffParcel(ConditionWithROSTopics):
     def _predicate(self, agent, blackboard):
         if "button_state" not in self._cache:
             return False
 
+        # 배송 중이 아니면 released는 무시
+        if not blackboard.get("delivery_active", False):
+            return False
+
         state = self._cache["button_state"].data.strip().lower()
-        print(f"[{self.name}] 🔘 Button State = {state}")
 
         if state == "released":
-            blackboard["parcel_dropped"] = True
+            print("[DropoffParcel] released → return to QR")
+            blackboard["delivery_active"] = False
             return True
 
         return False
+
 
 class WaitForQRPose(ConditionWithROSTopics): #배달 장소 인식 여부를 판단하는 노드
     def __init__(self, node_name, agent, name=None):
