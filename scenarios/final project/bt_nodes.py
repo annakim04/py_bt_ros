@@ -175,50 +175,43 @@ class Timeout(Node):
 
 
 #컨디션 노드
-class ReceiveParcel(ConditionWithROSTopics): #택배 수령 여부를 판단하는 노드
+class ReceiveParcel(ConditionWithROSTopics):
     def __init__(self, node_name, agent, name=None):
         final_name = name if name else node_name
-        super().__init__(final_name, agent, [(String, "/limo/button_status", "button_state")])
+        super().__init__(final_name, agent,
+                         [(String, "/limo/button_status", "button_state")])
 
     def _predicate(self, agent, blackboard):
-        #데이터가 아예 안 들어온 경우
         if "button_state" not in self._cache:
-            print(f"[{self.name}] Waiting for /limo/button data") 
             return False
-        
-        # 데이터가 들어온 경우 내용 확인함
-        msg = self._cache["button_state"]
-        raw_data = msg.data.strip().lower()
-        
-        #현재 버튼 상태 출력
-        print(f"[{self.name}] Button State: '{raw_data}'")
-        
-        if raw_data == "pressed":
-            print(f"[{self.name}] Button PRESSED! Moving to next step.")
-            # 버튼 확인 후 캐시 삭제 (한번 누르면 소모)
-            del self._cache["button_state"]
+
+        state = self._cache["button_state"].data.strip().lower()
+        print(f"[{self.name}] 🔘 Button State = {state}")
+
+        if state == "pressed":
+            # 상태 플래그 저장
+            blackboard["parcel_received"] = True
             return True
-            
+
         return False
 
-class DropoffParcel(ConditionWithROSTopics): #택배 배달 여부를 판단하는 노드
+class DropoffParcel(ConditionWithROSTopics):
     def __init__(self, node_name, agent, name=None):
         final_name = name if name else node_name
-        super().__init__(final_name, agent, [(String, "/limo/button_status", "button_state")])
+        super().__init__(final_name, agent,
+                         [(String, "/limo/button_status", "button_state")])
 
     def _predicate(self, agent, blackboard):
-        #데이터가 아예 안 들어온 경우
         if "button_state" not in self._cache:
-            print(f"[{self.name}] Waiting for /limo/button data") 
             return False
-        
+
         state = self._cache["button_state"].data.strip().lower()
+        print(f"[{self.name}] 🔘 Button State = {state}")
+
         if state == "released":
-            print(f"[{self.name}] Button released! Moving to next step.")
-            # 버튼 확인 후 캐시 삭제 (한번 누르면 소모)
-            del self._cache["button_state"]
+            blackboard["parcel_dropped"] = True
             return True
-        
+
         return False
 
 class WaitForQRPose(ConditionWithROSTopics): #배달 장소 인식 여부를 판단하는 노드
