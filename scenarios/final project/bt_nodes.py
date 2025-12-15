@@ -256,12 +256,22 @@ class ParcelAvailable(ConditionWithROSTopics):
             agent,
             [(Bool, PARCEL_AVAILABLE_TOPIC, "parcel_available")],
         )
+        self._last_value = False  # ⭐ 마지막 상태 기억
 
     def _predicate(self, agent, blackboard):
-        return self._cache.get(
-            "parcel_available", Bool(data=False)
-        ).data
+        if "parcel_available" in self._cache:
+            new_value = self._cache["parcel_available"].data
 
+            # 값이 바뀌었을 때만 교체
+            if new_value != self._last_value:
+                print(
+                    f"[{self.name}] parcel_available changed: "
+                    f"{self._last_value} → {new_value}"
+                )
+                self._last_value = new_value
+
+        # 메시지가 없으면 마지막 값 유지
+        return self._last_value
 
 class OtherRobotReceiving(ConditionWithROSTopics):
     def __init__(self, node_name, agent, name=None):
@@ -299,7 +309,11 @@ class ReceiveParcel(ConditionWithROSTopics, DeliveryPublishMixin): #택배 수�
         final_name = name if name else node_name
         super().__init__(final_name, agent, [(UInt8, "/limo/button_status", "button_state")])
         self.ros = agent.ros_bridge  #######################!!!!!!!!!!!!!!!!
-
+        self.receive_busy_pub = agent.ros_bridge.node.create_publisher(
+            Bool, RECEIVE_BUSY_TOPIC, 10
+        )
+        self.cleared = False        
+        
     def _predicate(self, agent, blackboard):
         #데이터가 아예 안 들어온 경우
         if "button_state" not in self._cache:
@@ -315,6 +329,12 @@ class ReceiveParcel(ConditionWithROSTopics, DeliveryPublishMixin): #택배 수�
         
         if raw_data == 1:
             print(f"[{self.name}] Button PRESSED! Moving to next step.")
+            if not self.cleared:
+                self.receive_busy_pub.publish(Bool(data=False))
+                self.cleared = True
+                print("[ReceiveParcel] 🟢 /receive_busy = false (picked up)")
+            
+            
             # 버튼 확인 후 캐시 삭제 (한번 누르면 소모)
             del self._cache["button_state"]
             return True
@@ -477,7 +497,7 @@ class MoveToDelivery(ActionWithROSAction, DeliveryPublishMixin):
             Bool, DROPOFF_BUSY_TOPIC, 10
         )
 
-        self.dropoff_set = False
+        self.busy_cleared = False
 
     def _build_goal(self, agent, blackboard):
         qr_pose = blackboard.get("qr_target_pose")
@@ -488,18 +508,18 @@ class MoveToDelivery(ActionWithROSAction, DeliveryPublishMixin):
         self.publish_status(UI_IN_TRANSIT, dest)#################666666666666
 
         if not self.busy_cleared:
-            self.receive_busy_pub.publish(Bool(data=False))
+            self.dropoff_busy_pub.publish(Bool(data=False))
             self.busy_cleared = True
-            print("[MoveToDelivery] 🟢 /receive_busy = false")
+            print("[MoveToDelivery] 🟢 /droppoff_busy = false")
 
         print(f"[{self.name}] Moving to Delivery Point (from QR)")
         return _create_nav_goal(self.ros.node, 0, 0, pose_stamped=qr_pose)
 
     def _interpret_result(self, result, agent, blackboard, status_code=None):
         if status_code == GoalStatus.STATUS_SUCCEEDED:
-            if not self.dropoff_set:
+            if not self.busy_cleared:
                 self.dropoff_busy_pub.publish(Bool(data=True))
-                self.dropoff_set = True
+                self.busy_cleared = True
                 print("[MoveToDelivery] 🔴 /dropoff_busy = true (arrived)")            
             if "qr_target_pose" in blackboard:
                 del blackboard["qr_target_pose"]
@@ -534,7 +554,7 @@ class MoveToPickupWaiting(ActionWithROSAction):
 
     def _interpret_result(self, result, agent, blackboard, status_code=None):
         if status_code == GoalStatus.STATUS_SUCCEEDED:
-            return Status.RUNNING
+            return Status.SUCCESS
         return Status.RUNNING
 
 class MoveToWaitingDrop(ActionWithROSAction):
