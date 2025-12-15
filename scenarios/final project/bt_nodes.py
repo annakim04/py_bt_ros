@@ -100,6 +100,16 @@ class DeliveryPublishMixin:
         self.pub_delivered.publish(Bool(data=v))
 
 #커스텀 노드
+# 무조건 실패를 반환하는 노드 (루프를 유지하기 위해 사용)
+class AlwaysFailure(Node):
+    def __init__(self, node_name, agent, name=None):
+        # 프레임워크가 보내주는 인자(node_name, agent, name)를 모두 받아야 합니다.
+        final_name = name if name else node_name
+        super().__init__(final_name)
+        self.type = "Action"  # 액션 타입 명시
+
+    async def run(self, agent, blackboard):
+        return Status.FAILURE
 #자식 노드가 실패하더라도 즉시 실패를 반환하지 않고, 지정된 횟수만큼 재시도 기회를 주는 노드
 class RetryUntilSuccessful(Node):
     def __init__(self, name, child, num_attempts=1):
@@ -419,9 +429,9 @@ class SpinInPlace(ActionWithROSAction): #리모 로봇이 제자리 회전하는
         goal.target_yaw = 1.57  # 90도 회전 (서버 설정에 따름)
         return goal
 
-CUSTOM_ACTION_NODES = ['MoveToCharge', 'MoveToPickup', 'MoveToDelivery', 'SpinInPlace']
+CUSTOM_ACTION_NODES = ['MoveToCharge', 'MoveToPickup', 'MoveToDelivery', 'SpinInPlace','AlwaysFailure']
 CUSTOM_CONDITION_NODES = ['ReceiveParcel', 'DropoffParcel','WaitForQRPose','IsButtonPressed']
-CUSTOM_DECORATOR_NODES = ['RetryUntilSuccessful', 'Timeout']
+CUSTOM_DECORATOR_NODES = ['RetryUntilSuccessful', 'Timeout' ]
 
 #내가 만든 커스텀 노드들을 행동 트리 시스템에 등록하는 절차
 BTNodeList.ACTION_NODES.extend(CUSTOM_ACTION_NODES)
