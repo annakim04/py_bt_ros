@@ -4,66 +4,57 @@
 
   <BehaviorTree ID="MainTree">
 
-    <!-- 전체를 계속 감시 -->
     <ReactiveSequence>
 
-      <!-- ================================================= -->
-      <!-- PICKUP PHASE -->
-      <!-- ================================================= -->
       <ReactiveFallback>
 
-        <!-- 택배 있음 + 수령 로직 -->
         <Sequence>
 
-          <!-- 1차 조건: 택배 존재 -->
           <ParcelAvailable/>
 
-          <!-- 2차 조건: 다른 로봇 수령 중? -->
           <ReactiveFallback>
 
-            <!-- 다른 로봇 수령 중이면 대기 -->
             <ReactiveSequence>
               <OtherRobotReceiving/>
-              <MoveToWaiting/>
+              <MoveToPickupWaiting/>
             </ReactiveSequence>
 
-            <!-- 아니면 내가 픽업 -->
             <MoveToPickup/>
 
           </ReactiveFallback>
 
-          <!-- 수령 버튼 (타임아웃 보호) -->
-          <Timeout duration="10.0">
+
+          <RetryUntilSuccessful num_attempts="60">
             <ReceiveParcel/>
+          </RetryUntilSuccessful>
+
+
+          <Timeout duration="10.0">
+            <WaitForQRPose/>
           </Timeout>
 
-          <!-- QR 인식 -->
-          <WaitForQRPose/>
-
-          <!-- ================================================= -->
-          <!-- DELIVERY PHASE -->
-          <!-- ================================================= -->
           <ReactiveFallback>
+            <ReactiveSequence>
+              <IsButtonPressed/>
+              <MoveToDelivery/>
+            </ReactiveSequence>
+             
+            <SpinInPlace/>
+          </ReactiveFallback>
 
-            <!-- 다른 로봇 배달 중이면 대기 -->
-            <Sequence>
+          <ReactiveFallback>
+            <ReactiveSequence>
               <OtherRobotDropping/>
-              <MoveToWaiting/>
-            </Sequence>
-
-            <!-- 아니면 배달 -->
+              <MoveToWaitingDrop/>
+            </ReactiveSequence>
             <MoveToDelivery/>
 
           </ReactiveFallback>
-
-          <!-- 배달 완료 -->
-          <DropoffParcel/>
+          <RetryUntilSuccessful num_attempts="999999">
+            <DropoffParcel/>
+          </RetryUntilSuccessful>
 
         </Sequence>
-
-        <!-- ================================================= -->
-        <!-- 택배 없으면 충전 -->
-        <!-- ================================================= -->
         <MoveToCharge/>
 
       </ReactiveFallback>
