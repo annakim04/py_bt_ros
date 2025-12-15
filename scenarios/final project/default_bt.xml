@@ -23,13 +23,13 @@
             <MoveToPickup/>
           </ReactiveFallback>
 
-          <RetryUntilSuccessful num_attempts="60">
-            <ReceiveParcel/>
-          </RetryUntilSuccessful>
-
-          <Timeout duration="10.0">
+          <Timeout duration="100.0">
             <WaitForQRPose/>
           </Timeout>
+
+          <RetryUntilSuccessful num_attempts="60">
+            <ReceiveParcel/>
+          </RetryUntilSuccessful>          
 
           <ReactiveFallback>
 
