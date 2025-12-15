@@ -24,7 +24,12 @@
                 <MoveToDelivery name="Move to Delivery Point"/>
              </ReactiveSequence>
              
-             <SpinInPlace name="Spinning (Wait for Button)"/>
+             <RetryUntilSuccessful num_attempts="999999">
+                <Sequence>
+                    <SpinInPlace name="Spinning (Wait for Button)"/>
+                    <AlwaysFailure name="Force Loop"/>
+                </Sequence>
+             </RetryUntilSuccessful>
           </ReactiveFallback>
 
           <RetryUntilSuccessful num_attempts="999999">
@@ -45,7 +50,7 @@
     <Action ID="MoveToDelivery" editable="true"/>
     <Action ID="WaitForQRPose" editable="true"/>
     <Action ID="SpinInPlace" editable="true"/>
-    <Condition ID="ReceiveParcel" editable="true"/>
+    <Action ID="AlwaysFailure" editable="true"/> <Condition ID="ReceiveParcel" editable="true"/>
     <Condition ID="DropoffParcel" editable="true"/>
     <Condition ID="IsButtonPressed" editable="true"/>
     
