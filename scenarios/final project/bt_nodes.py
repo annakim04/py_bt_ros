@@ -318,6 +318,11 @@ class DropoffParcel(ConditionWithROSTopics):#택배 배달 여부를 판단하�
         final_name = name if name else node_name
         super().__init__(final_name, agent, [(UInt8, "/limo/button_status", "button_state")])
         self.ros = agent.ros_bridge#####################
+        self.dropoff_busy_pub = agent.ros_bridge.node.create_publisher(
+            Bool, DROPOFF_BUSY_TOPIC, 10
+        )
+
+        self.cleared = False        
 
     def _predicate(self, agent, blackboard):
         #데이터가 아예 안 들어온 경우
@@ -327,7 +332,14 @@ class DropoffParcel(ConditionWithROSTopics):#택배 배달 여부를 판단하�
         
         state = self._cache["button_state"].data
         if state == 0:
-            print(f"[{self.name}] Button released! Moving to next step.")
+            print(f"[{self.name}] Button released! Delivery completed.")
+
+            if not self.cleared:
+                self.dropoff_busy_pub.publish(Bool(data=False))
+                self.cleared = True
+                print("[DropoffParcel] 🟢 /dropoff_busy = false (completed)")
+
+
             # 버튼 확인 후 캐시 삭제 (한번 누르면 소모)
             del self._cache["button_state"]
             return True
@@ -451,10 +463,11 @@ class MoveToDelivery(ActionWithROSAction, DeliveryPublishMixin):
         super().__init__(final_name, agent, (NavigateToPose, NAV_ACTION_NAME))
         self.ros = agent.ros_bridge
 
-        self.receive_busy_pub = agent.ros_bridge.node.create_publisher(
-            Bool, RECEIVE_BUSY_TOPIC, 10
+        self.dropoff_busy_pub = agent.ros_bridge.node.create_publisher(
+            Bool, DROPOFF_BUSY_TOPIC, 10
         )
-        self.busy_cleared = False
+
+        self.dropoff_set = False
 
     def _build_goal(self, agent, blackboard):
         qr_pose = blackboard.get("qr_target_pose")
@@ -474,6 +487,10 @@ class MoveToDelivery(ActionWithROSAction, DeliveryPublishMixin):
 
     def _interpret_result(self, result, agent, blackboard, status_code=None):
         if status_code == GoalStatus.STATUS_SUCCEEDED:
+            if not self.dropoff_set:
+                self.dropoff_busy_pub.publish(Bool(data=True))
+                self.dropoff_set = True
+                print("[MoveToDelivery] 🔴 /dropoff_busy = true (arrived)")            
             if "qr_target_pose" in blackboard:
                 del blackboard["qr_target_pose"]
             return Status.SUCCESS
