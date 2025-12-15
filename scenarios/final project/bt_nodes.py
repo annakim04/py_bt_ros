@@ -113,6 +113,16 @@ class DeliveryPublishMixin:
     def publish_delivered(self, v: bool):
         self._ensure_publishers()
         self.pub_delivered.publish(Bool(data=v))
+
+class AlwaysFailure(Node):
+    def __init__(self, node_name, agent, name=None):
+        # 프레임워크가 보내주는 인자(node_name, agent, name)를 모두 받아야 합니다.
+        final_name = name if name else node_name
+        super().__init__(final_name)
+        self.type = "Action"  # 액션 타입 명시
+
+    async def run(self, agent, blackboard):
+        return Status.FAILURE        
 # =========================================================
 # Decorators (원본 유지)
 # =========================================================
@@ -561,7 +571,7 @@ class SpinInPlace(ActionWithROSAction): #리모 로봇이 제자리 회전하는
 # =========================================================
 # Registration (🔥 원본 유지)
 # =========================================================
-CUSTOM_ACTION_NODES = ["MoveToCharge", "MoveToPickup", "MoveToDelivery", "MoveToPickupWaiting", "MoveToWaitingDrop", "SpinInPlace"]
+CUSTOM_ACTION_NODES = ["MoveToCharge", "MoveToPickup", "MoveToDelivery", "MoveToPickupWaiting", "MoveToWaitingDrop", "SpinInPlace", "AlwaysFailure"]
 
 CUSTOM_CONDITION_NODES = ["ReceiveParcel", "DropoffParcel", "WaitForQRPose", "ParcelAvailable", "OtherRobotReceiving", "OtherRobotDropping", "IsButtonPressed"]
 
