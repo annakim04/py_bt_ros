@@ -60,69 +60,73 @@ class LimoNavigateServer(Node):
     # -------------------------------------------------------------------------
     # 핵심 execute 콜백
     # -------------------------------------------------------------------------
+    import asyncio # 파일 맨 위에 이거 추가해야 함!
+
     async def execute_cb(self, goal_handle):
         """
-        BT → this server → Nav2 로 goal을 포워딩하고, 결과를 받아 BT에 전달
+        [수정된 버전] 이동 중에도 취소 요청을 실시간으로 감시합니다.
         """
-        bt_goal: NavigateToPose.Goal = goal_handle.request
+        bt_goal = goal_handle.request
 
-        # 1) Nav2 서버 준비 대기
-        self.get_logger().info("Waiting for Nav2 NavigateToPose action server...")
+        # 1. Nav2 서버 연결 확인
         if not self.nav2_client.wait_for_server(timeout_sec=10.0):
-            self.get_logger().error("Nav2 NavigateToPose server not available!")
-
+            self.get_logger().error("Nav2 server not available!")
             goal_handle.abort()
-            result = NavigateToPose.Result()
-            result.result = Empty()
-            return result
+            return NavigateToPose.Result()
 
-        self.get_logger().info(
-            f"Sending goal to Nav2: ({bt_goal.pose.pose.position.x:.2f}, "
-            f"{bt_goal.pose.pose.position.y:.2f})"
-        )
+        self.get_logger().info("Forwarding goal to Nav2...")
 
-        # 2) Nav2로 goal 전송
+        # 2. Nav2에게 목표 전송
         nav2_send_future = self.nav2_client.send_goal_async(
             bt_goal,
-            feedback_callback=lambda fb: self._on_nav2_feedback(fb, goal_handle),
+            feedback_callback=lambda fb: self._on_nav2_feedback(fb, goal_handle)
         )
         nav2_goal_handle = await nav2_send_future
 
         if not nav2_goal_handle.accepted:
             self.get_logger().warn("Nav2 rejected the goal.")
             goal_handle.abort()
-            result = NavigateToPose.Result()
-            result.result = Empty()
-            return result
+            return NavigateToPose.Result()
 
-        self.get_logger().info("Nav2 goal accepted. Waiting for result...")
+        self.get_logger().info("Nav2 Moving... (Monitoring for Cancel)")
 
-        # 3) BT에서 cancel 요청 체크
-        if goal_handle.is_cancel_requested:
-            self.get_logger().info("BT requested cancel. Cancelling Nav2 goal...")
-            cancel_future = nav2_goal_handle.cancel_goal_async()
-            await cancel_future
-
-            goal_handle.canceled()
-            result = NavigateToPose.Result()
-            result.result = Empty()
-            return result
-
-        # 4) Nav2 결과 기다림
+        # 3. [핵심 수정] 결과 대기 + 취소 감시 루프
         nav2_result_future = nav2_goal_handle.get_result_async()
-        nav2_result = await nav2_result_future
 
+        # Nav2가 끝날 때까지 0.1초마다 깨어나서 확인
+        while not nav2_result_future.done():
+            
+            # (1) 행동 트리가 취소를 요청했는지 확인!
+            if goal_handle.is_cancel_requested:
+                self.get_logger().info("✋ BT Cancel Requested! Stopping Nav2...")
+                
+                # Nav2에게도 취소 명령 전송
+                cancel_future = nav2_goal_handle.cancel_goal_async()
+                await cancel_future
+                
+                # BT에게 취소 완료 보고
+                goal_handle.canceled()
+                
+                # 빈 결과 반환하며 종료
+                result = NavigateToPose.Result()
+                result.result = Empty()
+                return result
+
+            # (2) 아직 안 끝났으면 0.1초 대기 (CPU 양보)
+            await asyncio.sleep(0.1)
+
+        # 4. Nav2 이동 종료 후 결과 처리
+        nav2_result = nav2_result_future.result()
         status = nav2_result.status
+        
         result = NavigateToPose.Result()
         result.result = Empty()
 
-        # 5) 성공 / 실패 판정
         if status == GoalStatus.STATUS_SUCCEEDED:
-            self.get_logger().info("Nav2 navigation succeeded.")
+            self.get_logger().info("Nav2 Arrived Succeeded.")
             goal_handle.succeed()
-
         else:
-            self.get_logger().warn(f"Nav2 navigation failed. status={status}")
+            self.get_logger().warn(f"Nav2 Failed/Cancelled. Status: {status}")
             goal_handle.abort()
 
         return result
