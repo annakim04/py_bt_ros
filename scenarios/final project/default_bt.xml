@@ -23,7 +23,7 @@
             <MoveToPickup/>
           </ReactiveFallback>
 
-          <Timeout duration="100.0">
+          <Timeout duration="100000.0">
             <RetryUntilSuccessful num_attempts="60">
               <WaitForQRPose/>
             </RetryUntilSuccessful>
