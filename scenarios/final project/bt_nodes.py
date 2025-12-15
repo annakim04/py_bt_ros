@@ -346,7 +346,7 @@ class MoveToDelivery(ActionWithROSAction):
         return Status.FAILURE
 
 
-class MoveToWaiting(ActionWithROSAction):
+class MoveToPickupWaiting(ActionWithROSAction):
     def __init__(self, node_name, agent, name=None):
         super().__init__(
             name if name else node_name,
@@ -362,8 +362,38 @@ class MoveToWaiting(ActionWithROSAction):
 
     def _interpret_result(self, result, agent, blackboard, status_code=None):
         if status_code == GoalStatus.STATUS_SUCCEEDED:
-            return Status.SUCCESS
+            return Status.RUNNING
         return Status.RUNNING
+
+class MoveToWaitingDrop(ActionWithROSAction):
+    def __init__(self, node_name, agent, name=None):
+        super().__init__(
+            name if name else node_name,
+            agent,
+            (NavigateToPose, NAV_ACTION_NAME),
+        )
+
+    def _build_goal(self, agent, blackboard):
+        print(f"[{self.name}] ⏸ Moving to Waiting Area")
+        return _create_nav_goal(
+            self.ros.node, WAIT_X, WAIT_Y, WAIT_YAW
+        )
+
+    def _interpret_result(self, result, agent, blackboard, status_code=None):
+        if status_code == GoalStatus.STATUS_SUCCEEDED:
+            return Status.RUNNING
+        return Status.RUNNING
+
+class SpinInPlace(ActionWithROSAction): #리모 로봇이 제자리 회전하는 노드
+    def __init__(self, node_name, agent, name=None):
+        final_name = name if name else node_name
+        # 서버(/limo/spin)에 Spin 액션을 요청하도록 설정
+        super().__init__(final_name, agent, (Spin, "/limo/spin"))
+
+    def _build_goal(self, agent, blackboard):
+        goal = Spin.Goal()
+        goal.target_yaw = 1.57  # 90도 회전 (서버 설정에 따름)
+        return goal
 
 
 # =========================================================
