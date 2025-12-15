@@ -552,7 +552,7 @@ class MoveToPickupWaiting(ActionWithROSAction):
 
     def _interpret_result(self, result, agent, blackboard, status_code=None):
         if status_code == GoalStatus.STATUS_SUCCEEDED:
-            return Status.SUCCESS
+            return Status.RUNNING
         return Status.RUNNING
 
 class MoveToWaitingDrop(ActionWithROSAction):
