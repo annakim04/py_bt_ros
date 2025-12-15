@@ -9,7 +9,9 @@
         
         <Sequence>
           <Timeout duration="10.0">
-            <WaitForQRPose name="Search QR Code"/>
+            <RetryUntilSuccessful num_attempts="9999">
+              <WaitForQRPose name="Search QR Code"/>
+            </RetryUntilSuccessful>
           </Timeout>
 
           <RetryUntilSuccessful num_attempts="60">
