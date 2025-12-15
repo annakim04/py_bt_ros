@@ -8,53 +8,60 @@
 
       <ReactiveFallback>
 
+        <!-- ============================= -->
+        <!-- PICKUP + DELIVERY -->
+        <!-- ============================= -->
         <Sequence>
 
           <ParcelAvailable/>
 
           <ReactiveFallback>
-
             <ReactiveSequence>
               <OtherRobotReceiving/>
               <MoveToPickupWaiting/>
             </ReactiveSequence>
-
             <MoveToPickup/>
-
           </ReactiveFallback>
-
 
           <RetryUntilSuccessful num_attempts="60">
             <ReceiveParcel/>
           </RetryUntilSuccessful>
-
 
           <Timeout duration="10.0">
             <WaitForQRPose/>
           </Timeout>
 
           <ReactiveFallback>
+
+            <!-- 버튼 ON 로직 -->
             <ReactiveSequence>
+
               <IsButtonPressed/>
-              <MoveToDelivery/>
+
+              <ReactiveFallback>
+
+                <ReactiveSequence>
+                  <OtherRobotDropping/>
+                  <MoveToWaitingDrop/>
+                </ReactiveSequence>
+
+                <MoveToDelivery/>
+
+              </ReactiveFallback>
+
             </ReactiveSequence>
-             
+
+            <!-- 버튼 OFF -->
             <SpinInPlace/>
-          </ReactiveFallback>
-
-          <ReactiveFallback>
-            <ReactiveSequence>
-              <OtherRobotDropping/>
-              <MoveToWaitingDrop/>
-            </ReactiveSequence>
-            <MoveToDelivery/>
 
           </ReactiveFallback>
+
           <RetryUntilSuccessful num_attempts="999999">
             <DropoffParcel/>
           </RetryUntilSuccessful>
 
         </Sequence>
+
         <MoveToCharge/>
 
       </ReactiveFallback>
