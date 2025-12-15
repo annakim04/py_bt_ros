@@ -1,6 +1,7 @@
 import math
 import time
 import rclpy
+import json
 
 from geometry_msgs.msg import PoseStamped, Quaternion
 from nav2_msgs.action import NavigateToPose, Spin
@@ -75,6 +76,7 @@ def _create_nav_goal(node, x, y, yaw=None, pose_stamped=None):
 # =========================================================
 CHARGE_X, CHARGE_Y, CHARGE_YAW = -4.198, 0.200, deg(0.0)
 PICKUP_X, PICKUP_Y, PICKUP_YAW = -6.326, 3.209, deg(90.0)
+WAIT_X, WAIT_Y, WAIT_YAW = -4.198, 0.200, deg(0.0)
 
 NAV_ACTION_NAME = "/limo/navigate_to_pose"
 
@@ -274,10 +276,12 @@ class OtherRobotDropping(ConditionWithROSTopics):
             [(Bool, DROPOFF_BUSY_TOPIC, "drop_busy")],
         )
 
-    def _predicate(self, agent, blackboard):
-        return self._cache.get(
-            "drop_busy", Bool(data=False)
-        ).data
+    async def run(self, agent, blackboard):
+        msg = self._cache.get("drop_busy")
+        if msg is None:
+            return Status.FAILURE
+        return Status.SUCCESS if msg.data else Status.FAILURE
+
 
 
 class ReceiveParcel(ConditionWithROSTopics, DeliveryPublishMixin): #택배 수령 여부를 판단하는 노드########
