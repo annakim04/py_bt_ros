@@ -2,13 +2,39 @@ import math
 import time
 import rclpy
 
+import json##########################
+
 from geometry_msgs.msg import PoseStamped, Quaternion
 from nav2_msgs.action import NavigateToPose, Spin
-from std_msgs.msg import String
 from action_msgs.msg import GoalStatus
+
+from std_msgs.msg import String, Bool, UInt8
 
 from modules.base_bt_nodes import BTNodeList, Status, Node, Sequence, Fallback, ReactiveFallback, ReactiveSequence
 from modules.base_bt_nodes_ros import ConditionWithROSTopics, ActionWithROSAction
+
+
+
+
+# =========================================================
+# ✅ UI 문구 (화면에 그대로 보여질 문자열)
+# =========================================================
+UI_TITLE = "[DELIVERY STATUS]"
+
+UI_DELIVERY_START      = "DELIVERY START"
+UI_ARRIVED_PICKUP      = "Arrived PICK-UP Location"
+UI_IN_TRANSIT          = "In TRANSIT"
+UI_PACKAGE_NOT_DETECTED   = "Package NOT Detected"
+UI_PICKUP_FAILED       = "PICK-UP FAILED"
+UI_DELIVERY_COMPLETED  = "DELIVERY COMPLETED"
+UI_BACK_TO_PICKUP      = "Back to PICK-UP Location"
+
+# =========================================================
+# UI 토픽
+# =========================================================
+TOPIC_DELIVERY_STATUS    = "/delivery/status"
+TOPIC_DELIVERY_ARRIVED   = "/delivery/arrived"
+TOPIC_DELIVERY_DELIVERED = "/delivery/delivered"
 
 
 def deg(d: float) -> float:
@@ -42,6 +68,36 @@ CHARGE_X,  CHARGE_Y,  CHARGE_YAW  = -4.198, 0.200, deg(0.0) #배달 픽업 장�
 PICKUP_X,  PICKUP_Y,  PICKUP_YAW  = -6.326, 3.209, deg(90.0) #배달 수령 장소 좌표
 
 NAV_ACTION_NAME = "/limo/navigate_to_pose" #Nav2에 목적지를 보내는 토픽
+
+# =========================================================
+# ✅ 배송 상태 Publish 공용 믹스인
+# =========================================================
+class DeliveryPublishMixin:
+    def _ensure_publishers(self):
+        if getattr(self, "_delivery_pub_ready", False):
+            return
+        node = self.ros.node
+        self.pub_status    = node.create_publisher(String, TOPIC_DELIVERY_STATUS, 10)
+        self.pub_arrived   = node.create_publisher(Bool,   TOPIC_DELIVERY_ARRIVED, 10)
+        self.pub_delivered = node.create_publisher(Bool,   TOPIC_DELIVERY_DELIVERED, 10)
+        self._delivery_pub_ready = True
+
+    def publish_status(self, state: str, destination: str = "N/A"):
+        self._ensure_publishers()
+        msg = String()
+        msg.data = json.dumps({
+            "state": state,
+            "destination": destination
+        }, ensure_ascii=False)
+        self.pub_status.publish(msg)
+
+    def publish_arrived(self, v: bool):
+        self._ensure_publishers()
+        self.pub_arrived.publish(Bool(data=v))
+
+    def publish_delivered(self, v: bool):
+        self._ensure_publishers()
+        self.pub_delivered.publish(Bool(data=v))
 
 #커스텀 노드
 #자식 노드가 실패하더라도 즉시 실패를 반환하지 않고, 지정된 횟수만큼 재시도 기회를 주는 노드
@@ -103,7 +159,7 @@ class RetryUntilSuccessful(Node):
             self.child.halt()
 
 #자식 노드가 정해진 시간 안에 성공하지 못하면,강제로 실패 처리해 무한 대기를 방지하는 노드
-class Timeout(Node):
+class Timeout(Node, DeliveryPublishMixin):###########################
     def __init__(self, name, child, duration=10.0):
         super().__init__(name)
         self.child = child # Timeout 노드가 감싸고 있는 실제 실행 노드
@@ -111,8 +167,11 @@ class Timeout(Node):
         self.start_time = None #타이머 시작 시간
         self.is_running = False #현재 타이머가 돌아가는 중인지 확인하는 플래그
         self.type = "Decorator" #노드 타입 명시
+        self.ros = None
 
     async def run(self, agent, blackboard):
+        if self.ros is None:           
+            self.ros = agent.ros_bridge
         #처음 실행될 때 한 번만 타이머 시작
         #is_running이 False거나 start_time이 없으면 새로 시간을 잰다.
         if not self.is_running or self.start_time is None:
@@ -131,6 +190,7 @@ class Timeout(Node):
         if elapsed > self.duration:
             print(f"[{self.name}] TIMEOUT! ({elapsed:.1f}s). Force FAILURE.")
             #자식 노드에게 중단 명령(halt)을 내림
+
             if hasattr(self.child, 'halt'):
                 self.child.halt()
             self.is_running = False 
@@ -161,8 +221,8 @@ class Timeout(Node):
     def reset(self):
         #외부 reset 신호에도 시간은 유지
         super().reset()
-        if hasattr(self.child, 'reset'):
-            self.child.reset()
+        #f hasattr(self.child, 'reset'):
+        #   self.child.reset()
         #여기서 self.start_time을 지우면 0.1초마다 시간이 초기화되어 영원히 Timeout이 안 됨
 
     #더 중요한 일이 생겨서 이 작업을 아예 중단할 때 호출
@@ -175,10 +235,11 @@ class Timeout(Node):
 
 
 #컨디션 노드
-class ReceiveParcel(ConditionWithROSTopics): #택배 수령 여부를 판단하는 노드
+class ReceiveParcel(ConditionWithROSTopics, DeliveryPublishMixin): #택배 수령 여부를 판단하는 노드########
     def __init__(self, node_name, agent, name=None):
         final_name = name if name else node_name
-        super().__init__(final_name, agent, [(String, "/limo/button_status", "button_state")])
+        super().__init__(final_name, agent, [(UInt8, "/limo/button_status", "button_state")])
+        self.ros = agent.ros_bridge  #######################!!!!!!!!!!!!!!!!
 
     def _predicate(self, agent, blackboard):
         #데이터가 아예 안 들어온 경우
@@ -188,12 +249,12 @@ class ReceiveParcel(ConditionWithROSTopics): #택배 수령 여부를 판단하�
         
         # 데이터가 들어온 경우 내용 확인함
         msg = self._cache["button_state"]
-        raw_data = msg.data.strip().lower()
+        raw_data = msg.data
         
         #현재 버튼 상태 출력
         print(f"[{self.name}] Button State: '{raw_data}'")
         
-        if raw_data == "pressed":
+        if raw_data == 1:
             print(f"[{self.name}] Button PRESSED! Moving to next step.")
             # 버튼 확인 후 캐시 삭제 (한번 누르면 소모)
             del self._cache["button_state"]
@@ -201,10 +262,11 @@ class ReceiveParcel(ConditionWithROSTopics): #택배 수령 여부를 판단하�
             
         return False
 
-class DropoffParcel(ConditionWithROSTopics): #택배 배달 여부를 판단하는 노드
+class DropoffParcel(ConditionWithROSTopics):#택배 배달 여부를 판단하는 노드  
     def __init__(self, node_name, agent, name=None):
         final_name = name if name else node_name
-        super().__init__(final_name, agent, [(String, "/limo/button_status", "button_state")])
+        super().__init__(final_name, agent, [(UInt8, "/limo/button_status", "button_state")])
+        self.ros = agent.ros_bridge#####################
 
     def _predicate(self, agent, blackboard):
         #데이터가 아예 안 들어온 경우
@@ -212,8 +274,8 @@ class DropoffParcel(ConditionWithROSTopics): #택배 배달 여부를 판단하�
             print(f"[{self.name}] Waiting for /limo/button data") 
             return False
         
-        state = self._cache["button_state"].data.strip().lower()
-        if state == "released":
+        state = self._cache["button_state"].data
+        if state == 0:
             print(f"[{self.name}] Button released! Moving to next step.")
             # 버튼 확인 후 캐시 삭제 (한번 누르면 소모)
             del self._cache["button_state"]
@@ -224,7 +286,7 @@ class DropoffParcel(ConditionWithROSTopics): #택배 배달 여부를 판단하�
 class WaitForQRPose(ConditionWithROSTopics): #배달 장소 인식 여부를 판단하는 노드
     def __init__(self, node_name, agent, name=None):
         final_name = name if name else node_name
-        super().__init__(final_name, agent, [(PoseStamped, "/qr_warehouse_pose", "qr_pose")])
+        super().__init__(final_name, agent, [(PoseStamped, "/qr_warehouse_pose", "qr_pose"),(String, "/qr_warehouse", "warehouse_name"),],)
 
     def _predicate(self, agent, blackboard):
         #데이터가 아예 안 들어온 경우
@@ -232,6 +294,23 @@ class WaitForQRPose(ConditionWithROSTopics): #배달 장소 인식 여부를 판
             print(f"[{self.name}] Waiting for QR data")
             return False
         
+        '''
+        warehouse = "_"
+        if "warehouse_name" in self._cache:
+            warehouse = self._cache["warehouse_name"].data.strip()
+            # 한 번만 쓰고 싶으면 소모
+            del self._cache["warehouse_name"]
+        '''
+        if "warehouse_name" not in self._cache:
+            print(f"[{self.name}] Waiting for /qr_warehouse String")
+            return False
+
+        # 3) 둘 다 있으면 읽어서 저장
+        warehouse = self._cache["warehouse_name"].data.strip()
+        del self._cache["warehouse_name"]
+
+
+
         #이동할 x,y 좌표를 데이터를 안전하게 넘겨주기 위해 캐시에 저장
         '''
         행동 트리(MoveToDelivery)가 블랙보드에 있는 좌표 (X=10, Y=20)을 읽으려고 합니다.
@@ -252,6 +331,7 @@ class WaitForQRPose(ConditionWithROSTopics): #배달 장소 인식 여부를 판
         print(f"[{self.name}] QR Pose Detected! Saving to blackboard.")
         #모든 노드가 볼 수 있게 블랙 보드에 이동할 x,y좌표를 저장함
         blackboard["qr_target_pose"] = msg
+        blackboard["qr_destination"] = warehouse
 
         # 4. 사용한 데이터 삭제 (한 번만 인식하고 넘어가기 위해)
         del self._cache["qr_pose"]
@@ -260,43 +340,50 @@ class WaitForQRPose(ConditionWithROSTopics): #배달 장소 인식 여부를 판
 class IsButtonPressed(ConditionWithROSTopics): #택배 운송 여부를 판단하는 노
     def __init__(self, node_name, agent, name=None):
         final_name = name if name else node_name
-        super().__init__(final_name, agent, [(String, "/limo/button_status", "button_state")])
+        super().__init__(final_name, agent, [(UInt8, "/limo/button_status", "button_state")])
 
     def _predicate(self, agent, blackboard):
         if "button_state" not in self._cache: 
             return False # 데이터 없으면 안 눌린 것으로 간주
         
-        data = self._cache["button_state"].data.strip().lower()
+        data = self._cache["button_state"].data
         # pressed 상태면 True, 아니면 False (데이터를 지우지 않음!)
-        return (data == "pressed")
+        return (data == 1)
 
 #액션 노드
-class MoveToCharge(ActionWithROSAction): #충전 장소로 이동하는 액션 노드
+class MoveToCharge(ActionWithROSAction, DeliveryPublishMixin):
     #Nav2에 보낼 요청 생성
     def __init__(self, node_name, agent, name=None):
         final_name = name if name else node_name
         super().__init__(final_name, agent, (NavigateToPose, NAV_ACTION_NAME))
+        self.ros = agent.ros_bridge
 
     #백보드에 저장한 x,y좌표로 이동하는 요청을 Nav2에 전송
     def _build_goal(self, agent, blackboard):
         print(f"[{self.name}] Moving to Charging Station")
+        self.publish_status(UI_PACKAGE_NOT_DETECTED)
         return _create_nav_goal(self.ros.node, CHARGE_X, CHARGE_Y, CHARGE_YAW)
 
-class MoveToPickup(ActionWithROSAction): #수령 장소로 이동하는 액션 노드
+class MoveToPickup(ActionWithROSAction, DeliveryPublishMixin): ##############
     #Nav2에 보낼 요청 생성
     def __init__(self, node_name, agent, name=None):
         final_name = name if name else node_name
         super().__init__(final_name, agent, (NavigateToPose, NAV_ACTION_NAME))
+        self.ros = agent.ros_bridge###############
+
 
     #백보드에 저장한 x,y좌표로 이동하는 요청을 Nav2에 전송
     def _build_goal(self, agent, blackboard):
         print(f"[{self.name}] Moving to Pickup Point")
+        self.publish_status(UI_DELIVERY_START)#####################
         return _create_nav_goal(self.ros.node, PICKUP_X, PICKUP_Y, PICKUP_YAW)
 
-class MoveToDelivery(ActionWithROSAction): #배달 장소로 이동하는 액션 노드
+class MoveToDelivery(ActionWithROSAction, DeliveryPublishMixin):####################6666666666
     def __init__(self, node_name, agent, name=None):
         final_name = name if name else node_name
         super().__init__(final_name, agent, (NavigateToPose, NAV_ACTION_NAME))
+        self.ros = agent.ros_bridge
+
 
     #백보드에 저장한 x,y좌표를 Nav2에 전송
     def _build_goal(self, agent, blackboard):
@@ -304,6 +391,11 @@ class MoveToDelivery(ActionWithROSAction): #배달 장소로 이동하는 액션
         if qr_pose is None: 
             print(f"[{self.name}] ERROR: No QR Pose in blackboard")
             return None
+
+        dest = blackboard.get("qr_destination", "_")########################66666
+        self.publish_status(UI_IN_TRANSIT, dest)#################666666666666
+
+
         print(f"[{self.name}] Moving to Delivery Point (from QR)")
         return _create_nav_goal(self.ros.node, 0, 0, pose_stamped=qr_pose)
     
@@ -311,6 +403,8 @@ class MoveToDelivery(ActionWithROSAction): #배달 장소로 이동하는 액션
     def _interpret_result(self, result, agent, blackboard, status_code=None):
         if status_code == GoalStatus.STATUS_SUCCEEDED:
             if "qr_target_pose" in blackboard: del blackboard["qr_target_pose"]
+
+
             return Status.SUCCESS
         return Status.FAILURE
 
