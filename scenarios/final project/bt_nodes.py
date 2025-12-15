@@ -15,7 +15,7 @@ from modules.base_bt_nodes_ros import ConditionWithROSTopics, ActionWithROSActio
 
 
 # =========================================================
-# ✅ UI 문구 (화면에 그대로 보여질 문자열)
+# UI 문구 (화면에 그대로 보여질 문자열)
 # =========================================================
 UI_TITLE = "[DELIVERY STATUS]"
 
@@ -245,7 +245,6 @@ class Timeout(Node, DeliveryPublishMixin):
         if hasattr(self.child, "halt"):
             self.child.halt()
 
-
 # =========================================================
 # Condition Nodes
 # =========================================================
@@ -256,7 +255,7 @@ class ParcelAvailable(ConditionWithROSTopics):
             agent,
             [(Bool, PARCEL_AVAILABLE_TOPIC, "parcel_available")],
         )
-        self._last_value = False  # ⭐ 마지막 상태 기억
+        self._last_value = False  # 마지막 상태 기억
 
     def _predicate(self, agent, blackboard):
         if "parcel_available" in self._cache:
@@ -332,7 +331,7 @@ class ReceiveParcel(ConditionWithROSTopics, DeliveryPublishMixin): #택배 수�
             if not self.cleared:
                 self.receive_busy_pub.publish(Bool(data=False))
                 self.cleared = True
-                print("[ReceiveParcel] 🟢 /receive_busy = false (picked up)")
+                print("[ReceiveParcel] /receive_busy = false (picked up)")
             
             
             # 버튼 확인 후 캐시 삭제 (한번 누르면 소모)
@@ -351,7 +350,6 @@ class DropoffParcel(ConditionWithROSTopics):#택배 배달 여부를 판단하�
         self.dropoff_busy_pub = agent.ros_bridge.node.create_publisher(
             Bool, DROPOFF_BUSY_TOPIC, 10
         )
-
         self.cleared = False        
 
     def _predicate(self, agent, blackboard):
@@ -367,7 +365,7 @@ class DropoffParcel(ConditionWithROSTopics):#택배 배달 여부를 판단하�
             if not self.cleared:
                 self.dropoff_busy_pub.publish(Bool(data=False))
                 self.cleared = True
-                print("[DropoffParcel] 🟢 /dropoff_busy = false (completed)")
+                print("[DropoffParcel] /dropoff_busy = false (completed)")
 
 
             # 버튼 확인 후 캐시 삭제 (한번 누르면 소모)
@@ -431,7 +429,7 @@ class WaitForQRPose(ConditionWithROSTopics): #배달 장소 인식 여부를 판
         del self._cache["qr_pose"]
         return True
 
-class IsButtonPressed(ConditionWithROSTopics): #택배 운송 여부를 판단하는 노
+class IsButtonPressed(ConditionWithROSTopics): #택배 운송 여부를 판단하는 노드
     def __init__(self, node_name, agent, name=None):
         final_name = name if name else node_name
         super().__init__(final_name, agent, [(UInt8, "/limo/button_status", "button_state")])
@@ -472,7 +470,7 @@ class MoveToPickup(ActionWithROSAction, DeliveryPublishMixin): ##############
 
     def _build_goal(self, agent, blackboard):
         print(f"[{self.name}] Moving to Pickup Point")
-        self.publish_status(UI_DELIVERY_START)#####################
+        self.publish_status(UI_DELIVERY_START)
         return _create_nav_goal(self.ros.node, PICKUP_X, PICKUP_Y, PICKUP_YAW)
 
 
@@ -481,7 +479,7 @@ class MoveToPickup(ActionWithROSAction, DeliveryPublishMixin): ##############
             if not self.busy_sent:
                 self.receive_busy_pub.publish(Bool(data=True))
                 self.busy_sent = True
-                print("[MoveToPickup] 🔴 /receive_busy = true")
+                print("[MoveToPickup] /receive_busy = true")
             return Status.SUCCESS
 
         return Status.FAILURE
@@ -504,13 +502,13 @@ class MoveToDelivery(ActionWithROSAction, DeliveryPublishMixin):
         if qr_pose is None: 
             print(f"[{self.name}] ERROR: No QR Pose in blackboard")
             return None
-        dest = blackboard.get("qr_destination", "_")########################66666
-        self.publish_status(UI_IN_TRANSIT, dest)#################666666666666
+        dest = blackboard.get("qr_destination", "_")
+        self.publish_status(UI_IN_TRANSIT, dest)
 
         if not self.busy_cleared:
             self.dropoff_busy_pub.publish(Bool(data=False))
             self.busy_cleared = True
-            print("[MoveToDelivery] 🟢 /droppoff_busy = false")
+            print("[MoveToDelivery] /droppoff_busy = false")
 
         print(f"[{self.name}] Moving to Delivery Point (from QR)")
         return _create_nav_goal(self.ros.node, 0, 0, pose_stamped=qr_pose)
@@ -520,7 +518,7 @@ class MoveToDelivery(ActionWithROSAction, DeliveryPublishMixin):
             if not self.busy_cleared:
                 self.dropoff_busy_pub.publish(Bool(data=True))
                 self.busy_cleared = True
-                print("[MoveToDelivery] 🔴 /dropoff_busy = true (arrived)")            
+                print("[MoveToDelivery] /dropoff_busy = true (arrived)")            
             if "qr_target_pose" in blackboard:
                 del blackboard["qr_target_pose"]
             return Status.SUCCESS
@@ -535,7 +533,7 @@ class SpinInPlace(ActionWithROSAction): #리모 로봇이 제자리 회전하는
 
     def _build_goal(self, agent, blackboard):
         goal = Spin.Goal()
-        goal.target_yaw = 1.57  # 90도 회전 (서버 설정에 따름)
+        goal.target_yaw = 1.57  # 90도 회전 
         return goal
 
 class MoveToPickupWaiting(ActionWithROSAction):
@@ -547,7 +545,7 @@ class MoveToPickupWaiting(ActionWithROSAction):
         )
 
     def _build_goal(self, agent, blackboard):
-        print(f"[{self.name}] ⏸ Moving to Waiting Area")
+        print(f"[{self.name}] Moving to Waiting Area(for pickup)")
         return _create_nav_goal(
             self.ros.node, WAIT_X, WAIT_Y, WAIT_YAW
         )
@@ -566,7 +564,7 @@ class MoveToWaitingDrop(ActionWithROSAction):
         )
 
     def _build_goal(self, agent, blackboard):
-        print(f"[{self.name}] ⏸ Moving to Waiting Area")
+        print(f"[{self.name}] Moving to Waiting Area(for dropoff)")
         return _create_nav_goal(
             self.ros.node, WAIT_X, WAIT_Y, WAIT_YAW
         )
@@ -584,12 +582,12 @@ class SpinInPlace(ActionWithROSAction): #리모 로봇이 제자리 회전하는
 
     def _build_goal(self, agent, blackboard):
         goal = Spin.Goal()
-        goal.target_yaw = 1.57  # 90도 회전 (서버 설정에 따름)
+        goal.target_yaw = 1.57  # 90도 회전 
         return goal
 
 
 # =========================================================
-# Registration (🔥 원본 유지)
+# Registration
 # =========================================================
 CUSTOM_ACTION_NODES = ["MoveToCharge", "MoveToPickup", "MoveToDelivery", "MoveToPickupWaiting", "MoveToWaitingDrop", "SpinInPlace", "AlwaysFailure"]
 
