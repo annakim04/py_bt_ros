@@ -24,7 +24,9 @@
           </ReactiveFallback>
 
           <Timeout duration="100.0">
-            <WaitForQRPose/>
+            <RetryUntilSuccessful num_attempts="60">
+              <WaitForQRPose/>
+            </RetryUntilSuccessful>
           </Timeout>
 
           <RetryUntilSuccessful num_attempts="60">
@@ -52,7 +54,12 @@
             </ReactiveSequence>
 
             <!-- 버튼 OFF -->
-            <SpinInPlace/>
+            <RetryUntilSuccessful num_attempts="999999">
+              <Sequence>
+                <SpinInPlace name="Spinning (Wait for Button)"/>
+                <AlwaysFailure name="Force Loop"/>
+              </Sequence>
+            </RetryUntilSuccessful>
 
           </ReactiveFallback>
 
