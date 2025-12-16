@@ -124,22 +124,7 @@ class AlwaysFailure(Node):
     async def run(self, agent, blackboard):
         return Status.FAILURE        
 
-class IdleWait(Node):
-    def __init__(self, name, duration=0.5):
-        super().__init__(name)
-        self.duration = duration
-        self.start = None
 
-    async def run(self, agent, blackboard):
-        if self.start is None:
-            self.start = time.time()
-            return Status.RUNNING
-
-        if time.time() - self.start >= self.duration:
-            self.start = None
-            return Status.SUCCESS
-
-        return Status.RUNNING
 # =========================================================
 # Decorators (원본 유지)
 # =========================================================
@@ -606,7 +591,7 @@ class SpinInPlace(ActionWithROSAction): #리모 로봇이 제자리 회전하는
 # =========================================================
 # Registration
 # =========================================================
-CUSTOM_ACTION_NODES = ["MoveToCharge", "MoveToPickup", "MoveToDelivery", "MoveToPickupWaiting", "MoveToWaitingDrop", "SpinInPlace", "AlwaysFailure", "IdleWait"]
+CUSTOM_ACTION_NODES = ["MoveToCharge", "MoveToPickup", "MoveToDelivery", "MoveToPickupWaiting", "MoveToWaitingDrop", "SpinInPlace", "AlwaysFailure"]
 
 CUSTOM_CONDITION_NODES = ["ReceiveParcel", "DropoffParcel", "WaitForQRPose", "ParcelAvailable", "OtherRobotReceiving", "OtherRobotDropping", "IsButtonPressed"]
 
