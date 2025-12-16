@@ -527,17 +527,6 @@ class MoveToDelivery(ActionWithROSAction, DeliveryPublishMixin):
 
         return Status.FAILURE
 
-class SpinInPlace(ActionWithROSAction): #리모 로봇이 제자리 회전하는 노드
-    def __init__(self, node_name, agent, name=None):
-        final_name = name if name else node_name
-        # 서버(/limo/spin)에 Spin 액션을 요청하도록 설정
-        super().__init__(final_name, agent, (Spin, "/limo/spin"))
-
-    def _build_goal(self, agent, blackboard):
-        goal = Spin.Goal()
-        goal.target_yaw = 1.57  # 90도 회전 
-        return goal
-
 class MoveToPickupWaiting(ActionWithROSAction):
     def __init__(self, node_name, agent, name=None):
         super().__init__(
