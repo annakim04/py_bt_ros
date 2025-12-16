@@ -1,11 +1,11 @@
 import math
 import time
 import rclpy
-
-import json##########################
+import json
 
 from geometry_msgs.msg import PoseStamped, Quaternion
 from nav2_msgs.action import NavigateToPose, Spin
+from std_msgs.msg import String, Bool
 from action_msgs.msg import GoalStatus
 
 from std_msgs.msg import String, Bool, UInt8
@@ -14,10 +14,8 @@ from modules.base_bt_nodes import BTNodeList, Status, Node, Sequence, Fallback, 
 from modules.base_bt_nodes_ros import ConditionWithROSTopics, ActionWithROSAction
 
 
-
-
 # =========================================================
-# ✅ UI 문구 (화면에 그대로 보여질 문자열)
+# UI 문구 (화면에 그대로 보여질 문자열)
 # =========================================================
 UI_TITLE = "[DELIVERY STATUS]"
 
@@ -36,9 +34,12 @@ TOPIC_DELIVERY_STATUS    = "/delivery/status"
 TOPIC_DELIVERY_ARRIVED   = "/delivery/arrived"
 TOPIC_DELIVERY_DELIVERED = "/delivery/delivered"
 
-
+# =========================================================
+# Helper
+# =========================================================
 def deg(d: float) -> float:
     return math.radians(d)
+
 
 def yaw_to_quaternion(yaw: float) -> Quaternion:
     q = Quaternion()
@@ -46,8 +47,10 @@ def yaw_to_quaternion(yaw: float) -> Quaternion:
     q.w = math.cos(yaw / 2.0)
     return q
 
+
 def _create_nav_goal(node, x, y, yaw=None, pose_stamped=None):
     goal = NavigateToPose.Goal()
+
     if pose_stamped:
         goal.pose = pose_stamped
     else:
@@ -57,21 +60,33 @@ def _create_nav_goal(node, x, y, yaw=None, pose_stamped=None):
         ps.pose.position.x = x
         ps.pose.position.y = y
         ps.pose.position.z = 0.0
+
         if yaw is not None:
             ps.pose.orientation = yaw_to_quaternion(yaw)
         else:
             ps.pose.orientation.w = 1.0
+
         goal.pose = ps
+
     return goal
 
-CHARGE_X,  CHARGE_Y,  CHARGE_YAW  = -4.198, 0.200, deg(0.0) #배달 픽업 장소 좌표
-PICKUP_X,  PICKUP_Y,  PICKUP_YAW  = -6.326, 3.209, deg(90.0) #배달 수령 장소 좌표
-
-NAV_ACTION_NAME = "/limo/navigate_to_pose" #Nav2에 목적지를 보내는 토픽
 
 # =========================================================
-# ✅ 배송 상태 Publish 공용 믹스인
+# Coordinates
 # =========================================================
+CHARGE_X, CHARGE_Y, CHARGE_YAW = -4.198, 0.200, deg(0.0)
+PICKUP_X, PICKUP_Y, PICKUP_YAW = -6.326, 3.209, deg(90.0)
+WAIT_X, WAIT_Y, WAIT_YAW = -4.198, 0.200, deg(0.0)
+
+NAV_ACTION_NAME = "/limo/navigate_to_pose"
+
+# =========================================================
+# Topics
+# =========================================================
+PARCEL_AVAILABLE_TOPIC = "/parcel_available"
+RECEIVE_BUSY_TOPIC = "/receive_busy"
+DROPOFF_BUSY_TOPIC = "/dropoff_busy"
+
 class DeliveryPublishMixin:
     def _ensure_publishers(self):
         if getattr(self, "_delivery_pub_ready", False):
@@ -99,8 +114,6 @@ class DeliveryPublishMixin:
         self._ensure_publishers()
         self.pub_delivered.publish(Bool(data=v))
 
-#커스텀 노드
-# 무조건 실패를 반환하는 노드 (루프를 유지하기 위해 사용)
 class AlwaysFailure(Node):
     def __init__(self, node_name, agent, name=None):
         # 프레임워크가 보내주는 인자(node_name, agent, name)를 모두 받아야 합니다.
@@ -109,8 +122,12 @@ class AlwaysFailure(Node):
         self.type = "Action"  # 액션 타입 명시
 
     async def run(self, agent, blackboard):
-        return Status.FAILURE
-#자식 노드가 실패하더라도 즉시 실패를 반환하지 않고, 지정된 횟수만큼 재시도 기회를 주는 노드
+        return Status.FAILURE        
+
+
+# =========================================================
+# Decorators (원본 유지)
+# =========================================================
 class RetryUntilSuccessful(Node):
     def __init__(self, name, child, num_attempts=1):
         super().__init__(name)
@@ -168,49 +185,41 @@ class RetryUntilSuccessful(Node):
         if hasattr(self.child, 'halt'):
             self.child.halt()
 
-#자식 노드가 정해진 시간 안에 성공하지 못하면,강제로 실패 처리해 무한 대기를 방지하는 노드
-class Timeout(Node, DeliveryPublishMixin):###########################
+
+class Timeout(Node, DeliveryPublishMixin):
     def __init__(self, name, child, duration=10.0):
         super().__init__(name)
-        self.child = child # Timeout 노드가 감싸고 있는 실제 실행 노드
-        self.duration = float(duration) #제한 시간 (초 단위)
-        self.start_time = None #타이머 시작 시간
-        self.is_running = False #현재 타이머가 돌아가는 중인지 확인하는 플래그
-        self.type = "Decorator" #노드 타입 명시
+        self.child = child
+        self.duration = float(duration)
+        self.start_time = None
+        self.is_running = False
+        self.type = "Decorator"
         self.ros = None
 
     async def run(self, agent, blackboard):
         if self.ros is None:           
             self.ros = agent.ros_bridge
-        #처음 실행될 때 한 번만 타이머 시작
-        #is_running이 False거나 start_time이 없으면 새로 시간을 잰다.
+
         if not self.is_running or self.start_time is None:
             self.start_time = time.time()
             self.is_running = True
-            print(f"[{self.name}] Timer Started. Limit: {self.duration}s")
+            print(f"[{self.name}] Timer Started ({self.duration}s)")
 
-        #경과 시간 계산
         elapsed = time.time() - self.start_time
-        
-        # 1초마다 남은 시간 출력
+
         if int(elapsed * 10) % 10 == 0:
             print(f"[{self.name}] ... {elapsed:.1f}s / {self.duration}s")
 
-        # 시간 초과 체크
         if elapsed > self.duration:
-            print(f"[{self.name}] TIMEOUT! ({elapsed:.1f}s). Force FAILURE.")
-            #자식 노드에게 중단 명령(halt)을 내림
+            print(f"[{self.name}] TIMEOUT")
 
-            if hasattr(self.child, 'halt'):
+            if hasattr(self.child, "halt"):
                 self.child.halt()
-            self.is_running = False 
+            self.is_running = False
             self.status = Status.FAILURE
             return Status.FAILURE
 
-        #아직 시간이 남았다면, 자식 노드를 실행
         result = await self.child.run(agent, blackboard)
-        
-        #자식 노드가 시간 안에 성공한 경우
         if result == Status.SUCCESS:
             print(f"[{self.name}] Child Succeeded!")
             self.is_running = False #타이머 종료
@@ -227,30 +236,85 @@ class Timeout(Node, DeliveryPublishMixin):###########################
         self.status = Status.RUNNING
         return Status.RUNNING
 
-    #0.1초마다 돌아오는 다음 생각(Tick)을 준비하는 함수
     def reset(self):
-        #외부 reset 신호에도 시간은 유지
         super().reset()
-        #f hasattr(self.child, 'reset'):
-        #   self.child.reset()
-        #여기서 self.start_time을 지우면 0.1초마다 시간이 초기화되어 영원히 Timeout이 안 됨
+        if hasattr(self.child, "reset"):
+            self.child.reset()
 
-    #더 중요한 일이 생겨서 이 작업을 아예 중단할 때 호출
-     #나중에 다시 돌아왔을 때는 0초로 초기화
-    def halt(self): # 행동 트리가 강제로 중단할 때 호출됨
+    def halt(self):
         self.is_running = False
         self.start_time = None
-        if hasattr(self.child, 'halt'):
+        if hasattr(self.child, "halt"):
             self.child.halt()
 
+# =========================================================
+# Condition Nodes
+# =========================================================
+class ParcelAvailable(ConditionWithROSTopics):
+    def __init__(self, node_name, agent, name=None):
+        super().__init__(
+            name if name else node_name,
+            agent,
+            [(Bool, PARCEL_AVAILABLE_TOPIC, "parcel_available")],
+        )
+        self._last_value = False  # 마지막 상태 기억
 
-#컨디션 노드
+    def _predicate(self, agent, blackboard):
+        if "parcel_available" in self._cache:
+            new_value = self._cache["parcel_available"].data
+
+            # 값이 바뀌었을 때만 교체
+            if new_value != self._last_value:
+                print(
+                    f"[{self.name}] parcel_available changed: "
+                    f"{self._last_value} → {new_value}"
+                )
+                self._last_value = new_value
+
+        # 메시지가 없으면 마지막 값 유지
+        return self._last_value
+
+class OtherRobotReceiving(ConditionWithROSTopics):
+    def __init__(self, node_name, agent, name=None):
+        super().__init__(
+            name if name else node_name,
+            agent,
+            [(Bool, RECEIVE_BUSY_TOPIC, "recv_busy")],
+        )
+
+    async def run(self, agent, blackboard):
+        msg = self._cache.get("recv_busy")
+        if msg is None:
+            return Status.FAILURE
+        return Status.SUCCESS if msg.data else Status.FAILURE
+
+
+class OtherRobotDropping(ConditionWithROSTopics):
+    def __init__(self, node_name, agent, name=None):
+        super().__init__(
+            name if name else node_name,
+            agent,
+            [(Bool, DROPOFF_BUSY_TOPIC, "drop_busy")],
+        )
+
+    async def run(self, agent, blackboard):
+        msg = self._cache.get("drop_busy")
+        if msg is None:
+            return Status.FAILURE
+        return Status.SUCCESS if msg.data else Status.FAILURE
+
+
+
 class ReceiveParcel(ConditionWithROSTopics, DeliveryPublishMixin): #택배 수령 여부를 판단하는 노드########
     def __init__(self, node_name, agent, name=None):
         final_name = name if name else node_name
         super().__init__(final_name, agent, [(UInt8, "/limo/button_status", "button_state")])
         self.ros = agent.ros_bridge  #######################!!!!!!!!!!!!!!!!
-
+        self.receive_busy_pub = agent.ros_bridge.node.create_publisher(
+            Bool, RECEIVE_BUSY_TOPIC, 10
+        )
+        self.cleared = False        
+        
     def _predicate(self, agent, blackboard):
         #데이터가 아예 안 들어온 경우
         if "button_state" not in self._cache:
@@ -266,17 +330,29 @@ class ReceiveParcel(ConditionWithROSTopics, DeliveryPublishMixin): #택배 수�
         
         if raw_data == 1:
             print(f"[{self.name}] Button PRESSED! Moving to next step.")
+            if not self.cleared:
+                self.receive_busy_pub.publish(Bool(data=False))
+                self.cleared = True
+                print("[ReceiveParcel] /receive_busy = false (picked up)")
+            
+            
             # 버튼 확인 후 캐시 삭제 (한번 누르면 소모)
             del self._cache["button_state"]
             return True
             
         return False
 
+
+
 class DropoffParcel(ConditionWithROSTopics):#택배 배달 여부를 판단하는 노드  
     def __init__(self, node_name, agent, name=None):
         final_name = name if name else node_name
         super().__init__(final_name, agent, [(UInt8, "/limo/button_status", "button_state")])
         self.ros = agent.ros_bridge#####################
+        self.dropoff_busy_pub = agent.ros_bridge.node.create_publisher(
+            Bool, DROPOFF_BUSY_TOPIC, 10
+        )
+        self.cleared = False        
 
     def _predicate(self, agent, blackboard):
         #데이터가 아예 안 들어온 경우
@@ -286,12 +362,20 @@ class DropoffParcel(ConditionWithROSTopics):#택배 배달 여부를 판단하�
         
         state = self._cache["button_state"].data
         if state == 0:
-            print(f"[{self.name}] Button released! Moving to next step.")
+            print(f"[{self.name}] Button released! Delivery completed.")
+
+            if not self.cleared:
+                self.dropoff_busy_pub.publish(Bool(data=False))
+                self.cleared = True
+                print("[DropoffParcel] /dropoff_busy = false (completed)")
+
+
             # 버튼 확인 후 캐시 삭제 (한번 누르면 소모)
             del self._cache["button_state"]
             return True
         
         return False
+
 
 class WaitForQRPose(ConditionWithROSTopics): #배달 장소 인식 여부를 판단하는 노드
     def __init__(self, node_name, agent, name=None):
@@ -347,7 +431,7 @@ class WaitForQRPose(ConditionWithROSTopics): #배달 장소 인식 여부를 판
         del self._cache["qr_pose"]
         return True
 
-class IsButtonPressed(ConditionWithROSTopics): #택배 운송 여부를 판단하는 노
+class IsButtonPressed(ConditionWithROSTopics): #택배 운송 여부를 판단하는 노드
     def __init__(self, node_name, agent, name=None):
         final_name = name if name else node_name
         super().__init__(final_name, agent, [(UInt8, "/limo/button_status", "button_state")])
@@ -360,7 +444,6 @@ class IsButtonPressed(ConditionWithROSTopics): #택배 운송 여부를 판단�
         # pressed 상태면 True, 아니면 False (데이터를 지우지 않음!)
         return (data == 1)
 
-#액션 노드
 class MoveToCharge(ActionWithROSAction, DeliveryPublishMixin):
     #Nav2에 보낼 요청 생성
     def __init__(self, node_name, agent, name=None):
@@ -374,6 +457,7 @@ class MoveToCharge(ActionWithROSAction, DeliveryPublishMixin):
         self.publish_status(UI_PACKAGE_NOT_DETECTED)
         return _create_nav_goal(self.ros.node, CHARGE_X, CHARGE_Y, CHARGE_YAW)
 
+
 class MoveToPickup(ActionWithROSAction, DeliveryPublishMixin): ##############
     #Nav2에 보낼 요청 생성
     def __init__(self, node_name, agent, name=None):
@@ -381,41 +465,66 @@ class MoveToPickup(ActionWithROSAction, DeliveryPublishMixin): ##############
         super().__init__(final_name, agent, (NavigateToPose, NAV_ACTION_NAME))
         self.ros = agent.ros_bridge###############
 
+        self.receive_busy_pub = agent.ros_bridge.node.create_publisher(
+            Bool, RECEIVE_BUSY_TOPIC, 10
+        )
+        self.busy_sent = False
 
-    #백보드에 저장한 x,y좌표로 이동하는 요청을 Nav2에 전송
     def _build_goal(self, agent, blackboard):
         print(f"[{self.name}] Moving to Pickup Point")
-        self.publish_status(UI_DELIVERY_START)#####################
+        self.publish_status(UI_DELIVERY_START)
         return _create_nav_goal(self.ros.node, PICKUP_X, PICKUP_Y, PICKUP_YAW)
 
-class MoveToDelivery(ActionWithROSAction, DeliveryPublishMixin):####################6666666666
+
+    def _interpret_result(self, result, agent, blackboard, status_code=None):
+        if status_code == GoalStatus.STATUS_SUCCEEDED:
+            if not self.busy_sent:
+                self.receive_busy_pub.publish(Bool(data=True))
+                self.busy_sent = True
+                print("[MoveToPickup] /receive_busy = true")
+            return Status.SUCCESS
+
+        return Status.FAILURE
+
+
+class MoveToDelivery(ActionWithROSAction, DeliveryPublishMixin):
     def __init__(self, node_name, agent, name=None):
         final_name = name if name else node_name
         super().__init__(final_name, agent, (NavigateToPose, NAV_ACTION_NAME))
         self.ros = agent.ros_bridge
 
+        self.dropoff_busy_pub = agent.ros_bridge.node.create_publisher(
+            Bool, DROPOFF_BUSY_TOPIC, 10
+        )
 
-    #백보드에 저장한 x,y좌표를 Nav2에 전송
+        self.busy_cleared = False
+
     def _build_goal(self, agent, blackboard):
         qr_pose = blackboard.get("qr_target_pose")
         if qr_pose is None: 
             print(f"[{self.name}] ERROR: No QR Pose in blackboard")
             return None
+        dest = blackboard.get("qr_destination", "_")
+        self.publish_status(UI_IN_TRANSIT, dest)
 
-        dest = blackboard.get("qr_destination", "_")########################66666
-        self.publish_status(UI_IN_TRANSIT, dest)#################666666666666
-
+        if not self.busy_cleared:
+            self.dropoff_busy_pub.publish(Bool(data=False))
+            self.busy_cleared = True
+            print("[MoveToDelivery] /droppoff_busy = false")
 
         print(f"[{self.name}] Moving to Delivery Point (from QR)")
         return _create_nav_goal(self.ros.node, 0, 0, pose_stamped=qr_pose)
-    
-    #Nav2에 전송을 성공 실패 여부 확인
+
     def _interpret_result(self, result, agent, blackboard, status_code=None):
         if status_code == GoalStatus.STATUS_SUCCEEDED:
-            if "qr_target_pose" in blackboard: del blackboard["qr_target_pose"]
-
-
+            if not self.busy_cleared:
+                self.dropoff_busy_pub.publish(Bool(data=True))
+                self.busy_cleared = True
+                print("[MoveToDelivery] /dropoff_busy = true (arrived)")            
+            if "qr_target_pose" in blackboard:
+                del blackboard["qr_target_pose"]
             return Status.SUCCESS
+
         return Status.FAILURE
 
 class SpinInPlace(ActionWithROSAction): #리모 로봇이 제자리 회전하는 노드
@@ -426,21 +535,73 @@ class SpinInPlace(ActionWithROSAction): #리모 로봇이 제자리 회전하는
 
     def _build_goal(self, agent, blackboard):
         goal = Spin.Goal()
-        goal.target_yaw = 1.57  # 90도 회전 (서버 설정에 따름)
+        goal.target_yaw = 1.57  # 90도 회전 
         return goal
 
-CUSTOM_ACTION_NODES = ['MoveToCharge', 'MoveToPickup', 'MoveToDelivery', 'SpinInPlace','AlwaysFailure']
-CUSTOM_CONDITION_NODES = ['ReceiveParcel', 'DropoffParcel','WaitForQRPose','IsButtonPressed']
-CUSTOM_DECORATOR_NODES = ['RetryUntilSuccessful', 'Timeout' ]
+class MoveToPickupWaiting(ActionWithROSAction):
+    def __init__(self, node_name, agent, name=None):
+        super().__init__(
+            name if name else node_name,
+            agent,
+            (NavigateToPose, NAV_ACTION_NAME),
+        )
 
-#내가 만든 커스텀 노드들을 행동 트리 시스템에 등록하는 절차
+    def _build_goal(self, agent, blackboard):
+        print(f"[{self.name}] Moving to Waiting Area(for pickup)")
+        return _create_nav_goal(
+            self.ros.node, WAIT_X, WAIT_Y, WAIT_YAW
+        )
+
+    def _interpret_result(self, result, agent, blackboard, status_code=None):
+        if status_code == GoalStatus.STATUS_SUCCEEDED:
+            return Status.SUCCESS
+        return Status.RUNNING
+
+class MoveToWaitingDrop(ActionWithROSAction):
+    def __init__(self, node_name, agent, name=None):
+        super().__init__(
+            name if name else node_name,
+            agent,
+            (NavigateToPose, NAV_ACTION_NAME),
+        )
+
+    def _build_goal(self, agent, blackboard):
+        print(f"[{self.name}] Moving to Waiting Area(for dropoff)")
+        return _create_nav_goal(
+            self.ros.node, WAIT_X, WAIT_Y, WAIT_YAW
+        )
+
+    def _interpret_result(self, result, agent, blackboard, status_code=None):
+        if status_code == GoalStatus.STATUS_SUCCEEDED:
+            return Status.RUNNING
+        return Status.RUNNING
+
+class SpinInPlace(ActionWithROSAction): #리모 로봇이 제자리 회전하는 노드
+    def __init__(self, node_name, agent, name=None):
+        final_name = name if name else node_name
+        # 서버(/limo/spin)에 Spin 액션을 요청하도록 설정
+        super().__init__(final_name, agent, (Spin, "/limo/spin"))
+
+    def _build_goal(self, agent, blackboard):
+        goal = Spin.Goal()
+        goal.target_yaw = 1.57  # 90도 회전 
+        return goal
+
+
+# =========================================================
+# Registration
+# =========================================================
+CUSTOM_ACTION_NODES = ["MoveToCharge", "MoveToPickup", "MoveToDelivery", "MoveToPickupWaiting", "MoveToWaitingDrop", "SpinInPlace", "AlwaysFailure"]
+
+CUSTOM_CONDITION_NODES = ["ReceiveParcel", "DropoffParcel", "WaitForQRPose", "ParcelAvailable", "OtherRobotReceiving", "OtherRobotDropping", "IsButtonPressed"]
+
+CUSTOM_DECORATOR_NODES = ["RetryUntilSuccessful", "Timeout"]
+
 BTNodeList.ACTION_NODES.extend(CUSTOM_ACTION_NODES)
 BTNodeList.CONDITION_NODES.extend(CUSTOM_CONDITION_NODES)
 
-#행동 트리 라이브러리의 버전에 따라 노드를 관리하는 방식이 다를 수 있기 때문
-#최신의 경우: "Sequence나 Fallback은 Control에 넣고, Retry나 Timeout은 Decorator에 넣는데 만약 DECORATOR_NODES가 있는데 CONTROL_NODES에 넣으면 에러가 날 수도 있음
-#옛날의 경우: 전부 Control에 넣는데 이 경우 DECORATOR_NODES라는 리스트 자체가 아예 존재하지 않음
-if hasattr(BTNodeList, 'DECORATOR_NODES'):
+
+if hasattr(BTNodeList, "DECORATOR_NODES"):
     BTNodeList.DECORATOR_NODES.extend(CUSTOM_DECORATOR_NODES)
 else:
-    BTNodeList.CONTROL_NODES.extend(CUSTOM_DECORATOR_NODES)
+    BTNodeList.CONTROL_NODES.extend(CUSTOM_DECORATOR_NODES)     
