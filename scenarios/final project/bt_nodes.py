@@ -123,6 +123,23 @@ class AlwaysFailure(Node):
 
     async def run(self, agent, blackboard):
         return Status.FAILURE        
+
+class IdleWait(Node):
+    def __init__(self, name, duration=0.5):
+        super().__init__(name)
+        self.duration = duration
+        self.start = None
+
+    async def run(self, agent, blackboard):
+        if self.start is None:
+            self.start = time.time()
+            return Status.RUNNING
+
+        if time.time() - self.start >= self.duration:
+            self.start = None
+            return Status.SUCCESS
+
+        return Status.RUNNING
 # =========================================================
 # Decorators (원본 유지)
 # =========================================================
@@ -552,7 +569,7 @@ class MoveToPickupWaiting(ActionWithROSAction):
 
     def _interpret_result(self, result, agent, blackboard, status_code=None):
         if status_code == GoalStatus.STATUS_SUCCEEDED:
-            return Status.RUNNING
+            return Status.SUCCESS
         return Status.RUNNING
 
 class MoveToWaitingDrop(ActionWithROSAction):
@@ -589,7 +606,7 @@ class SpinInPlace(ActionWithROSAction): #리모 로봇이 제자리 회전하는
 # =========================================================
 # Registration
 # =========================================================
-CUSTOM_ACTION_NODES = ["MoveToCharge", "MoveToPickup", "MoveToDelivery", "MoveToPickupWaiting", "MoveToWaitingDrop", "SpinInPlace", "AlwaysFailure"]
+CUSTOM_ACTION_NODES = ["MoveToCharge", "MoveToPickup", "MoveToDelivery", "MoveToPickupWaiting", "MoveToWaitingDrop", "SpinInPlace", "AlwaysFailure", "IdleWait"]
 
 CUSTOM_CONDITION_NODES = ["ReceiveParcel", "DropoffParcel", "WaitForQRPose", "ParcelAvailable", "OtherRobotReceiving", "OtherRobotDropping", "IsButtonPressed"]
 
@@ -602,4 +619,4 @@ BTNodeList.CONDITION_NODES.extend(CUSTOM_CONDITION_NODES)
 if hasattr(BTNodeList, "DECORATOR_NODES"):
     BTNodeList.DECORATOR_NODES.extend(CUSTOM_DECORATOR_NODES)
 else:
-    BTNodeList.CONTROL_NODES.extend(CUSTOM_DECORATOR_NODES)
+    BTNodeList.CONTROL_NODES.extend(CUSTOM_DECORATOR_NODES)     
