@@ -1,64 +1,80 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<root BTCPP_format="4">
-  <BehaviorTree ID="limo_delivery_tree">
-    <Sequence>
-      
-      <MoveToPickup name="Go to Pickup Point"/>
 
-      <Fallback>
-        
+<root main_tree_to_execute="MainTree">
+
+  <BehaviorTree ID="MainTree">
+
+    <ReactiveSequence>
+
+      <ReactiveFallback>
+
+        <!-- ============================= -->
+        <!-- PICKUP + DELIVERY -->
+        <!-- ============================= -->
         <Sequence>
-          <Timeout duration="10.0">
-            <RetryUntilSuccessful num_attempts="9999">
-              <WaitForQRPose name="Search QR Code"/>
+
+          <ParcelAvailable/>
+
+          <ReactiveFallback>
+            <ReactiveSequence>
+              <OtherRobotReceiving/>
+              <MoveToPickupWaiting/>
+            </ReactiveSequence>
+            <MoveToPickup/>
+          </ReactiveFallback>
+
+          <Timeout duration="100000.0">
+            <RetryUntilSuccessful num_attempts="60">
+              <WaitForQRPose/>
             </RetryUntilSuccessful>
           </Timeout>
 
           <RetryUntilSuccessful num_attempts="60">
-            <ReceiveParcel name="Check Parcel Loaded"/>
-          </RetryUntilSuccessful>
+            <ReceiveParcel/>
+          </RetryUntilSuccessful>          
 
           <ReactiveFallback>
-             <ReactiveSequence>
-                <IsButtonPressed name="Check Button Holding"/>
-                <MoveToDelivery name="Move to Delivery Point"/>
-             </ReactiveSequence>
-             
-             <RetryUntilSuccessful num_attempts="999999">
-                <Sequence>
-                    <SpinInPlace name="Spinning (Wait for Button)"/>
-                    <AlwaysFailure name="Force Loop"/>
-                </Sequence>
-             </RetryUntilSuccessful>
+
+            <!-- 버튼 ON 로직 -->
+            <ReactiveSequence>
+
+              <IsButtonPressed/>
+
+              <ReactiveFallback>
+
+                <ReactiveSequence>
+                  <OtherRobotDropping/>
+                  <MoveToWaitingDrop/>
+                </ReactiveSequence>
+
+                <MoveToDelivery/>
+
+              </ReactiveFallback>
+
+            </ReactiveSequence>
+
+            <!-- 버튼 OFF -->
+            <RetryUntilSuccessful num_attempts="999999">
+              <Sequence>
+                <SpinInPlace name="Spinning (Wait for Button)"/>
+                <AlwaysFailure name="Force Loop"/>
+              </Sequence>
+            </RetryUntilSuccessful>
+
           </ReactiveFallback>
 
           <RetryUntilSuccessful num_attempts="999999">
-            <DropoffParcel name="Wait for Unloading"/>
+            <DropoffParcel/>
           </RetryUntilSuccessful>
-          
+
         </Sequence>
 
-        <MoveToCharge name="Return to Charger"/>
-        
-      </Fallback>
-    </Sequence>
+        <MoveToCharge/>
+
+      </ReactiveFallback>
+
+    </ReactiveSequence>
+
   </BehaviorTree>
 
-  <TreeNodesModel>
-    <Action ID="MoveToCharge" editable="true"/>
-    <Action ID="MoveToPickup" editable="true"/>
-    <Action ID="MoveToDelivery" editable="true"/>
-    <Action ID="WaitForQRPose" editable="true"/>
-    <Action ID="SpinInPlace" editable="true"/>
-    <Action ID="AlwaysFailure" editable="true"/> <Condition ID="ReceiveParcel" editable="true"/>
-    <Condition ID="DropoffParcel" editable="true"/>
-    <Condition ID="IsButtonPressed" editable="true"/>
-    
-    <Decorator ID="RetryUntilSuccessful" editable="true">
-      <input_port name="num_attempts" default="1" type="int"/>
-    </Decorator>
-    <Decorator ID="Timeout" editable="true">
-      <input_port name="duration" default="10.0" type="float"/>
-    </Decorator>
-  </TreeNodesModel>
 </root>
