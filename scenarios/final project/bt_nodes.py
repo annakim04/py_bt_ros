@@ -458,16 +458,19 @@ class MoveToCharge(ActionWithROSAction, DeliveryPublishMixin):
         return _create_nav_goal(self.ros.node, CHARGE_X, CHARGE_Y, CHARGE_YAW)
 
 
-class MoveToPickup(ActionWithROSAction, DeliveryPublishMixin): ##############
-    #Nav2에 보낼 요청 생성
+class MoveToPickup(ActionWithROSAction, DeliveryPublishMixin):
+
     def __init__(self, node_name, agent, name=None):
-        final_name = name if name else node_name
-        super().__init__(final_name, agent, (NavigateToPose, NAV_ACTION_NAME))
-        self.ros = agent.ros_bridge###############
+        super().__init__(name if name else node_name, agent,
+                         (NavigateToPose, NAV_ACTION_NAME))
+        self.ros = agent.ros_bridge
 
         self.receive_busy_pub = agent.ros_bridge.node.create_publisher(
             Bool, RECEIVE_BUSY_TOPIC, 10
         )
+
+        self.goal_handle = None
+        self.goal_sent = False
         self.busy_sent = False
 
     def _build_goal(self, agent, blackboard):
@@ -475,57 +478,95 @@ class MoveToPickup(ActionWithROSAction, DeliveryPublishMixin): ##############
         self.publish_status(UI_DELIVERY_START)
         return _create_nav_goal(self.ros.node, PICKUP_X, PICKUP_Y, PICKUP_YAW)
 
+    async def run(self, agent, blackboard):
+        if not self.goal_sent:
+            goal = self._build_goal(agent, blackboard)
+            self.goal_handle = await self._send_goal(goal)
+            self.goal_sent = True
+            return Status.RUNNING
 
-    def _interpret_result(self, result, agent, blackboard, status_code=None):
-        if status_code == GoalStatus.STATUS_SUCCEEDED:
-            if not self.busy_sent:
-                self.receive_busy_pub.publish(Bool(data=True))
-                self.busy_sent = True
-                print("[MoveToPickup] /receive_busy = true")
-            return Status.SUCCESS
+        if self.goal_handle.done():
+            status = self.goal_handle.status
+            self.goal_sent = False
 
-        return Status.FAILURE
+            if status == GoalStatus.STATUS_SUCCEEDED:
+                if not self.busy_sent:
+                    self.receive_busy_pub.publish(Bool(data=True))
+                    self.busy_sent = True
+                    print("[MoveToPickup] /receive_busy = true")
+                return Status.SUCCESS
 
+            return Status.FAILURE
+
+        return Status.RUNNING
+
+    async def halt(self):
+        if self.goal_handle:
+            await self.goal_handle.cancel_goal_async()
+            self.goal_handle = None
+            self.goal_sent = False
 
 class MoveToDelivery(ActionWithROSAction, DeliveryPublishMixin):
+
     def __init__(self, node_name, agent, name=None):
-        final_name = name if name else node_name
-        super().__init__(final_name, agent, (NavigateToPose, NAV_ACTION_NAME))
+        super().__init__(name if name else node_name, agent,
+                         (NavigateToPose, NAV_ACTION_NAME))
         self.ros = agent.ros_bridge
 
         self.dropoff_busy_pub = agent.ros_bridge.node.create_publisher(
             Bool, DROPOFF_BUSY_TOPIC, 10
         )
 
+        self.goal_handle = None
+        self.goal_sent = False
         self.busy_cleared = False
 
     def _build_goal(self, agent, blackboard):
         qr_pose = blackboard.get("qr_target_pose")
-        if qr_pose is None: 
-            print(f"[{self.name}] ERROR: No QR Pose in blackboard")
+        if qr_pose is None:
+            print(f"[{self.name}] ERROR: No QR Pose")
             return None
+
         dest = blackboard.get("qr_destination", "_")
         self.publish_status(UI_IN_TRANSIT, dest)
 
         if not self.busy_cleared:
             self.dropoff_busy_pub.publish(Bool(data=False))
             self.busy_cleared = True
-            print("[MoveToDelivery] /droppoff_busy = false")
+            print("[MoveToDelivery] /dropoff_busy = false")
 
-        print(f"[{self.name}] Moving to Delivery Point (from QR)")
         return _create_nav_goal(self.ros.node, 0, 0, pose_stamped=qr_pose)
 
-    def _interpret_result(self, result, agent, blackboard, status_code=None):
-        if status_code == GoalStatus.STATUS_SUCCEEDED:
-            if not self.busy_cleared:
-                self.dropoff_busy_pub.publish(Bool(data=True))
-                self.busy_cleared = True
-                print("[MoveToDelivery] /dropoff_busy = true (arrived)")            
-            if "qr_target_pose" in blackboard:
-                del blackboard["qr_target_pose"]
-            return Status.SUCCESS
+    async def run(self, agent, blackboard):
+        if not self.goal_sent:
+            goal = self._build_goal(agent, blackboard)
+            if goal is None:
+                return Status.FAILURE
+            self.goal_handle = await self._send_goal(goal)
+            self.goal_sent = True
+            return Status.RUNNING
 
-        return Status.FAILURE
+        if self.goal_handle.done():
+            status = self.goal_handle.status
+            self.goal_sent = False
+
+            if status == GoalStatus.STATUS_SUCCEEDED:
+                self.dropoff_busy_pub.publish(Bool(data=True))
+                print("[MoveToDelivery] /dropoff_busy = true")
+
+                blackboard.pop("qr_target_pose", None)
+                return Status.SUCCESS
+
+            return Status.FAILURE
+
+        return Status.RUNNING
+
+    async def halt(self):
+        if self.goal_handle:
+            await self.goal_handle.cancel_goal_async()
+            self.goal_handle = None
+            self.goal_sent = False
+
 
 class SpinInPlace(ActionWithROSAction): #리모 로봇이 제자리 회전하는 노드
     def __init__(self, node_name, agent, name=None):
@@ -539,42 +580,64 @@ class SpinInPlace(ActionWithROSAction): #리모 로봇이 제자리 회전하는
         return goal
 
 class MoveToPickupWaiting(ActionWithROSAction):
+
     def __init__(self, node_name, agent, name=None):
-        super().__init__(
-            name if name else node_name,
-            agent,
-            (NavigateToPose, NAV_ACTION_NAME),
-        )
+        super().__init__(name if name else node_name, agent,
+                         (NavigateToPose, NAV_ACTION_NAME))
+        self.ros = agent.ros_bridge
+        self.goal_handle = None
+        self.goal_sent = False
 
     def _build_goal(self, agent, blackboard):
-        print(f"[{self.name}] Moving to Waiting Area(for pickup)")
-        return _create_nav_goal(
-            self.ros.node, WAIT_X, WAIT_Y, WAIT_YAW
-        )
+        print(f"[{self.name}] Moving to Pickup Waiting")
+        return _create_nav_goal(self.ros.node, WAIT_X, WAIT_Y, WAIT_YAW)
 
-    def _interpret_result(self, result, agent, blackboard, status_code=None):
-        if status_code == GoalStatus.STATUS_SUCCEEDED:
-            return Status.SUCCESS
-        return Status.RUNNING
+    async def run(self, agent, blackboard):
+        if not self.goal_sent:
+            self.goal_handle = await self._send_goal(
+                self._build_goal(agent, blackboard)
+            )
+            self.goal_sent = True
+            return Status.RUNNING
+
+        return Status.RUNNING   # 도착해도 계속 대기
+
+    async def halt(self):
+        if self.goal_handle:
+            await self.goal_handle.cancel_goal_async()
+            self.goal_handle = None
+            self.goal_sent = False
+
 
 class MoveToWaitingDrop(ActionWithROSAction):
+
     def __init__(self, node_name, agent, name=None):
-        super().__init__(
-            name if name else node_name,
-            agent,
-            (NavigateToPose, NAV_ACTION_NAME),
-        )
+        super().__init__(name if name else node_name, agent,
+                         (NavigateToPose, NAV_ACTION_NAME))
+        self.ros = agent.ros_bridge
+        self.goal_handle = None
+        self.goal_sent = False
 
     def _build_goal(self, agent, blackboard):
-        print(f"[{self.name}] Moving to Waiting Area(for dropoff)")
-        return _create_nav_goal(
-            self.ros.node, WAIT_X, WAIT_Y, WAIT_YAW
-        )
+        print(f"[{self.name}] Moving to Drop Waiting")
+        return _create_nav_goal(self.ros.node, WAIT_X, WAIT_Y, WAIT_YAW)
 
-    def _interpret_result(self, result, agent, blackboard, status_code=None):
-        if status_code == GoalStatus.STATUS_SUCCEEDED:
+    async def run(self, agent, blackboard):
+        if not self.goal_sent:
+            self.goal_handle = await self._send_goal(
+                self._build_goal(agent, blackboard)
+            )
+            self.goal_sent = True
             return Status.RUNNING
+
         return Status.RUNNING
+
+    async def halt(self):
+        if self.goal_handle:
+            await self.goal_handle.cancel_goal_async()
+            self.goal_handle = None
+            self.goal_sent = False
+
 
 class SpinInPlace(ActionWithROSAction): #리모 로봇이 제자리 회전하는 노드
     def __init__(self, node_name, agent, name=None):
