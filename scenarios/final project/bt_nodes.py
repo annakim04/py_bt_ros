@@ -74,9 +74,9 @@ def _create_nav_goal(node, x, y, yaw=None, pose_stamped=None):
 # =========================================================
 # Coordinates
 # =========================================================
-CHARGE_X, CHARGE_Y, CHARGE_YAW = -4.198, 0.200, deg(0.0)
-PICKUP_X, PICKUP_Y, PICKUP_YAW = -6.326, 3.209, deg(90.0)
-WAIT_X, WAIT_Y, WAIT_YAW = -4.198, 0.200, deg(0.0)
+CHARGE_X, CHARGE_Y, CHARGE_YAW = 1.928, 0.039, deg(-82.5)
+PICKUP_X, PICKUP_Y, PICKUP_YAW = 2.672, 4.222, deg(-67.9)
+WAIT_X, WAIT_Y, WAIT_YAW = 0.340, 0.162, deg(-7.9)
 
 NAV_ACTION_NAME = "/limo/navigate_to_pose"
 
