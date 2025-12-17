@@ -13,17 +13,19 @@
         <!-- ============================= -->
         <Sequence>
 
-          <ParcelAvailable/>
+          <ReactiveSequence>
+            <ParcelAvailable/>
 
-          <ReactiveFallback>
-            <ReactiveSequence>
-              <OtherRobotReceiving/>
-              <MoveToPickupWaiting/>
-            </ReactiveSequence>
-            <MoveToPickup/>
-          </ReactiveFallback>
-
-          <Timeout duration="100000.0">
+            <ReactiveFallback>
+              <ReactiveSequence>
+                <OtherRobotReceiving/>
+                <MoveToPickupWaiting/>
+              </ReactiveSequence>
+              <MoveToPickup/>
+            </ReactiveFallback>
+          </ReactiveSequence>
+          
+          <Timeout duration="100.0">
             <RetryUntilSuccessful num_attempts="60">
               <WaitForQRPose/>
             </RetryUntilSuccessful>
@@ -66,7 +68,6 @@
           <RetryUntilSuccessful num_attempts="999999">
             <DropoffParcel/>
           </RetryUntilSuccessful>
-
         </Sequence>
 
         <MoveToCharge/>
