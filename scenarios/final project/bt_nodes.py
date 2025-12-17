@@ -78,7 +78,6 @@ CHARGE_X, CHARGE_Y, CHARGE_YAW = 0.776, 4.081, deg(-74.4)
 PICKUP_X, PICKUP_Y, PICKUP_YAW = -0.194, 0.0007, deg(-5.2)
 WAIT_X, WAIT_Y, WAIT_YAW = 2.979, 2.922, deg(11.8)
 
-
 NAV_ACTION_NAME = "/limo/navigate_to_pose"
 
 # =========================================================
@@ -342,7 +341,10 @@ class ReceiveParcel(ConditionWithROSTopics, DeliveryPublishMixin): #택배 수�
             return True
             
         return False
-
+        
+    def reset(self):
+        super().reset()
+        self.cleared = False
 
 
 class DropoffParcel(ConditionWithROSTopics):#택배 배달 여부를 판단하는 노드  
@@ -376,6 +378,10 @@ class DropoffParcel(ConditionWithROSTopics):#택배 배달 여부를 판단하�
             return True
         
         return False
+
+    def reset(self):
+        super().reset()
+        self.cleared = False
 
 
 class WaitForQRPose(ConditionWithROSTopics): #배달 장소 인식 여부를 판단하는 노드
@@ -487,6 +493,10 @@ class MoveToPickup(ActionWithROSAction, DeliveryPublishMixin): ##############
 
         return Status.FAILURE
 
+    def reset(self):
+        super().reset()
+        self.busy_sent = False 
+
 
 class MoveToDelivery(ActionWithROSAction, DeliveryPublishMixin):
     def __init__(self, node_name, agent, name=None):
@@ -528,6 +538,10 @@ class MoveToDelivery(ActionWithROSAction, DeliveryPublishMixin):
 
         return Status.FAILURE
 
+    def reset(self):
+        super().reset()
+        self.busy_cleared = False
+
 class MoveToPickupWaiting(ActionWithROSAction):
     def __init__(self, node_name, agent, name=None):
         super().__init__(
@@ -544,7 +558,7 @@ class MoveToPickupWaiting(ActionWithROSAction):
 
     def _interpret_result(self, result, agent, blackboard, status_code=None):
         if status_code == GoalStatus.STATUS_SUCCEEDED:
-            return Status.SUCCESS
+            return Status.RUNNING
         return Status.RUNNING
 
 class MoveToWaitingDrop(ActionWithROSAction):
